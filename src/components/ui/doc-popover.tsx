@@ -195,7 +195,7 @@ export function DocPopover({
             <div
               {...sheetProps}
               aria-describedby={`${sheetProps.id}-body`}
-              className="relative z-10 w-full max-w-lg max-h-[85dvh] overflow-y-auto rounded-t-2xl border-t border-[var(--color-border)] bg-[var(--color-surface-raised)] px-4 pt-3 pb-[calc(1rem+env(safe-area-inset-bottom))] shadow-[var(--shadow-modal)] transition-transform duration-200 ease-[var(--ease-pop)] translate-y-0 motion-reduce:duration-0"
+              className="relative z-10 w-full max-w-lg max-h-[85dvh] overflow-y-auto overscroll-contain rounded-t-2xl border-t border-[var(--color-border)] bg-[var(--color-surface-raised)] px-4 pt-3 pb-[calc(1rem+env(safe-area-inset-bottom))] shadow-[var(--shadow-modal)] transition-transform duration-200 ease-[var(--ease-pop)] translate-y-0 motion-reduce:duration-0"
             >
               <div
                 aria-hidden

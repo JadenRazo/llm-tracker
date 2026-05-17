@@ -275,34 +275,19 @@ export function useDocOverlay(): DocOverlay {
     return () => mql.removeEventListener("change", apply);
   }, []);
 
-  // Sheet-only: scroll-position-preserving body lock, ESC close, focus trap,
-  // restore focus. Bare `overflow:hidden` does not hold the scroll position on
-  // mobile Safari — the page jumps to the top behind the sheet and stays there
-  // after close. Pin the body at the current scrollY instead and restore it
-  // (and the page scroll) on close. Every focus() call uses preventScroll so
-  // moving focus into/out of the sheet never scrolls the document.
+  // Sheet-only: ESC close, focus trap, restore focus. We deliberately do NOT
+  // lock or pin body/document scroll. The sheet's full-screen fixed wrapper
+  // already blocks interaction with the background, and pinning the body
+  // (position:fixed) is unreliable on layouts whose scroll root is <html>
+  // (Next.js default) — it visually snapped the page to the top behind the
+  // sheet and overshot on restore. Not touching scroll at all means the
+  // position is inherently preserved (the document never scrolls). Every
+  // focus() uses preventScroll so moving focus never scrolls the document.
   useEffect(() => {
     if (!open || !isSheet) return;
 
     lastFocusedRef.current =
       document.activeElement instanceof HTMLElement ? document.activeElement : null;
-
-    const body = document.body;
-    const scrollY = window.scrollY;
-    const prev = {
-      position: body.style.position,
-      top: body.style.top,
-      left: body.style.left,
-      right: body.style.right,
-      width: body.style.width,
-      overflow: body.style.overflow,
-    };
-    body.style.position = "fixed";
-    body.style.top = `-${scrollY}px`;
-    body.style.left = "0";
-    body.style.right = "0";
-    body.style.width = "100%";
-    body.style.overflow = "hidden";
 
     const sheet = sheetRef.current;
     // Move focus into the sheet so the trap has a starting point.
@@ -342,13 +327,6 @@ export function useDocOverlay(): DocOverlay {
     document.addEventListener("keydown", onKey, true);
     return () => {
       document.removeEventListener("keydown", onKey, true);
-      body.style.position = prev.position;
-      body.style.top = prev.top;
-      body.style.left = prev.left;
-      body.style.right = prev.right;
-      body.style.width = prev.width;
-      body.style.overflow = prev.overflow;
-      window.scrollTo(0, scrollY);
       lastFocusedRef.current?.focus?.({ preventScroll: true });
     };
   }, [open, isSheet, setOpen]);
