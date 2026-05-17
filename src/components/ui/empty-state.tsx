@@ -30,12 +30,11 @@ export function EmptyState({
         className,
       )}
     >
-      <span
-        className="mb-4 inline-flex size-16 items-center justify-center rounded-full bg-[var(--color-surface-raised)] text-[var(--color-text-muted)]"
+      <Icon
+        className="mb-4 size-8 text-[var(--color-text-muted)]"
+        strokeWidth={1.5}
         aria-hidden
-      >
-        <Icon className="size-7" />
-      </span>
+      />
       <h3 className="text-display-sm text-[var(--color-text-primary)]">{title}</h3>
       {description ? (
         <p className="mt-2 max-w-md text-ui-md text-[var(--color-text-secondary)]">

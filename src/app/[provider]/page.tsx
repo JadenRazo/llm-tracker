@@ -8,7 +8,7 @@ import { desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowUpRight, Clock, Package, Sparkles, Terminal } from "lucide-react";
+import { ArrowUpRight, Boxes, Clock, Package, Terminal } from "lucide-react";
 import { tryGetDb } from "@/lib/db";
 import { cliReference, events, mcpServers, models } from "@/lib/db/schema";
 import type { CliReference, Event, McpServer } from "@/lib/db/schema";
@@ -299,7 +299,7 @@ function FreshnessProof({
         </Card>
         <Card variant="outlined">
           <div className="flex items-center gap-2 text-meta text-[var(--color-text-muted)]">
-            <Sparkles className="size-3.5" aria-hidden /> Models in catalog
+            <Boxes className="size-3.5" aria-hidden /> Models in catalog
           </div>
           <div className="mt-2 font-mono text-display-sm text-[var(--color-text-primary)]">
             {modelCount > 0 ? modelCount : "—"}

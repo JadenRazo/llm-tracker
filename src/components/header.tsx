@@ -7,11 +7,11 @@ import { clsx } from "clsx";
 import {
   Activity,
   BookOpen,
+  Boxes,
   Lightbulb,
   Map,
   Menu,
   Package,
-  Sparkles,
   Terminal,
   X,
   type LucideIcon,
@@ -34,7 +34,7 @@ interface NavItem {
 // (Claude when on the cross-provider root). "" is the provider home.
 const LINKS: NavItem[] = [
   { suffix: "", label: "Learn", icon: BookOpen },
-  { suffix: "/models", label: "Models", icon: Sparkles },
+  { suffix: "/models", label: "Models", icon: Boxes },
   { suffix: "/releases", label: "Releases", icon: Terminal },
   { suffix: "/tips", label: "Tips", icon: Lightbulb },
   { suffix: "/guides", label: "Guides", icon: Map },

@@ -5,7 +5,7 @@
 import { desc, eq } from "drizzle-orm";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { Clock, Database, Sparkles } from "lucide-react";
+import { Boxes, Clock, Database } from "lucide-react";
 import { tryGetDb } from "@/lib/db";
 import { models } from "@/lib/db/schema";
 import type { Model } from "@/lib/db/schema";
@@ -92,7 +92,7 @@ export default async function ModelsPage({ params }: PageProps) {
   return (
     <Container>
       <PageHeader
-        icon={Sparkles}
+        icon={Boxes}
         eyebrow="CATALOG"
         title="Models"
         description={`Every ${meta.label} model the tracker has observed, with context window and capabilities — polled every 30 minutes.`}
@@ -104,7 +104,7 @@ export default async function ModelsPage({ params }: PageProps) {
           <>
             <section className="grid grid-cols-1 gap-4 animate-in sm:grid-cols-3">
               <Stat
-                icon={Sparkles}
+                icon={Boxes}
                 label="Models in catalog"
                 value={rows.length}
                 hint={`tracked for ${meta.label}`}
@@ -128,7 +128,7 @@ export default async function ModelsPage({ params }: PageProps) {
           </>
         ) : (
           <EmptyState
-            icon={Sparkles}
+            icon={Boxes}
             title={`No ${meta.label} model catalog`}
             description={`${meta.label} doesn't expose a machine-readable model catalog the tracker can poll, so this page stays empty by design. Release and changelog tracking is unaffected.`}
             hint={`See the ${meta.label} releases and changelog for model news.`}

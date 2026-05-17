@@ -12,11 +12,11 @@
 import {
   Activity,
   BookOpen,
+  Boxes,
   FileText,
   GitBranch,
   Newspaper,
   Package,
-  Sparkles,
   type LucideIcon,
 } from "lucide-react";
 
@@ -68,7 +68,7 @@ export const SOURCES: Record<SourceKey, SourceMeta> = {
   anthropic_models: {
     label: "models",
     longLabel: "Anthropic models",
-    icon: Sparkles,
+    icon: Boxes,
     cssVar: "--color-src-models",
     tintClass: "src-models",
   },

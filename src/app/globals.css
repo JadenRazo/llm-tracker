@@ -219,7 +219,7 @@
 }
 
 @utility animate-in {
-  animation: fade-in-up 0.4s ease-out both;
+  animation: fade-in-up 0.22s var(--ease-pop) both;
 }
 
 /* Subtle stagger for the first few entry-animated sections on a page.
@@ -242,6 +242,15 @@ main > * > .animate-in:nth-child(4) { animation-delay: 120ms; }
   );
   background-size: 200% 100%;
   animation: shimmer 1.8s linear infinite;
+}
+
+/* Honor reduced-motion: drop entry/loop animation, keep final state. */
+@media (prefers-reduced-motion: reduce) {
+  .animate-in,
+  .animate-pulse-dot,
+  .animate-shimmer {
+    animation: none !important;
+  }
 }
 
 /* ─────────────────────────────────────────────────────────────
