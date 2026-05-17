@@ -1,0 +1,68 @@
+{
+  "_comment": "Manual curation on top of the auto-scraped community list. `pin` entries are inserted verbatim (no scrape) with a rank higher than any scraped row. `boost` adds to the computed rank of a scraped row. `hide` excludes an id from the final table.",
+
+  "pin": [
+    {
+      "id": "modelcontextprotocol/server-filesystem",
+      "name": "Filesystem",
+      "description": "Secure file operations with configurable access controls — lets Claude read, write, and list files on the local machine.",
+      "repoUrl": "https://github.com/modelcontextprotocol/servers/tree/main/src/filesystem",
+      "category": "reference",
+      "installCmd": "npx -y @modelcontextprotocol/server-filesystem"
+    },
+    {
+      "id": "modelcontextprotocol/server-git",
+      "name": "Git",
+      "description": "Tools to read, search, and manipulate Git repositories without shelling out.",
+      "repoUrl": "https://github.com/modelcontextprotocol/servers/tree/main/src/git",
+      "category": "reference",
+      "installCmd": "uvx mcp-server-git"
+    },
+    {
+      "id": "modelcontextprotocol/server-fetch",
+      "name": "Fetch",
+      "description": "Web content fetching and conversion for efficient LLM usage.",
+      "repoUrl": "https://github.com/modelcontextprotocol/servers/tree/main/src/fetch",
+      "category": "reference",
+      "installCmd": "uvx mcp-server-fetch"
+    },
+    {
+      "id": "modelcontextprotocol/server-memory",
+      "name": "Memory",
+      "description": "Knowledge-graph-based persistent memory across sessions.",
+      "repoUrl": "https://github.com/modelcontextprotocol/servers/tree/main/src/memory",
+      "category": "reference",
+      "installCmd": "npx -y @modelcontextprotocol/server-memory"
+    },
+    {
+      "id": "modelcontextprotocol/server-sequentialthinking",
+      "name": "Sequential Thinking",
+      "description": "Structured step-by-step reasoning scratch-pad with revision and branching.",
+      "repoUrl": "https://github.com/modelcontextprotocol/servers/tree/main/src/sequentialthinking",
+      "category": "reference",
+      "installCmd": "npx -y @modelcontextprotocol/server-sequentialthinking"
+    },
+    {
+      "id": "modelcontextprotocol/server-everything",
+      "name": "Everything",
+      "description": "Reference / test server exercising every MCP feature (prompts, resources, tools) — the canonical learning-by-example server.",
+      "repoUrl": "https://github.com/modelcontextprotocol/servers/tree/main/src/everything",
+      "category": "reference",
+      "installCmd": "npx -y @modelcontextprotocol/server-everything"
+    },
+    {
+      "id": "modelcontextprotocol/server-time",
+      "name": "Time",
+      "description": "Time and timezone conversion utilities.",
+      "repoUrl": "https://github.com/modelcontextprotocol/servers/tree/main/src/time",
+      "category": "reference",
+      "installCmd": "uvx mcp-server-time"
+    }
+  ],
+
+  "boost": {},
+
+  "hide": [
+    "modelcontextprotocol/servers-archived"
+  ]
+}
