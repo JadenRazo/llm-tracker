@@ -1,10 +1,13 @@
-# claude-tracker
+# LLM Tracker
 
-Public, read-only Claude ecosystem dashboard served at `claude.raizhost.com`.
+Public, read-only multi-LLM dashboard served at `llm.raizhost.com` (the old
+`claude.raizhost.com` 301-redirects here).
 
-Polls a tiered set of data sources (npm, GitHub, Anthropic API, docs, status page) on a
-schedule and renders an aggregated feed, a model catalog, the Claude Code version
-timeline, and curated markdown tips/guides.
+Tracks what's shipping across **Claude, OpenAI, and Gemini** — Claude Code and
+Codex are the coding headliners. Polls a tiered set of per-provider data
+sources (npm, GitHub, provider APIs, docs, status pages) on a schedule and
+renders a cross-provider "what's new" feed, per-provider model catalogs, CLI
+version timelines, and curated markdown tips/guides.
 
 ## Stack
 
@@ -43,7 +46,10 @@ to be on localhost.
 ## Deploy
 
 `docker compose up -d --build` after copying `.env.example` to `.env` and filling it
-in. Caddy terminates TLS in front of port 3200.
+in. Caddy terminates TLS in front of port 3200; the vhost (and the
+`claude.raizhost.com` → `llm.raizhost.com` 301) lives at
+`deploy/caddy/llm.raizhost.com.Caddyfile` — apply steps are in that file's
+header and require hands on the infra host.
 
 ## Mobile responsiveness
 

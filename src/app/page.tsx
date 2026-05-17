@@ -3,9 +3,9 @@
 // provider switcher as the primary CTA, and one unified "what's new" feed
 // aggregated across Claude / OpenAI / Gemini (provider-tagged, newest first).
 //
-// Working brand copy only — Phase 2.4 finalizes the name and metadata. Stays
-// inside the earth/forest token system: one accent per provider mapped to an
-// existing palette var, no gradients, no generic 3-up feature row.
+// Brand: "LLM Tracker" at llm.raizhost.com. Stays inside the earth/forest
+// token system: one accent per provider mapped to an existing palette var,
+// no gradients, no generic 3-up feature row.
 
 import { desc } from "drizzle-orm";
 import type { Metadata } from "next";
@@ -22,9 +22,13 @@ import { isProvider, type Provider } from "@/lib/providers";
 import { PROVIDER_ORDER, getProviderMeta } from "@/lib/provider-meta";
 
 export const metadata: Metadata = {
-  title: "How to use Claude, OpenAI & Gemini — tracker",
+  // Cross-provider home owns the site's default title verbatim — don't apply
+  // the "%s — LLM Tracker" template to the root.
+  title: {
+    absolute: "LLM Tracker — what's shipping across Claude, OpenAI & Gemini",
+  },
   description:
-    "A self-updating reference across Claude, OpenAI, and Gemini — releases, CLIs, models, and docs, version-pinned and re-verified as they ship.",
+    "Track what ships across Claude, OpenAI, and Gemini in one place. Claude Code and Codex are the coding headliners; every release, CLI change, and model is version-pinned and re-verified as it lands.",
 };
 
 // Force dynamic — the aggregated feed reads live DB rows; the Docker build
@@ -52,18 +56,19 @@ function Hero() {
     <section className="relative overflow-hidden rounded-2xl border border-[var(--color-border)]/60 bg-[var(--color-surface)] p-6 animate-in sm:p-8 lg:p-10">
       <div className="flex flex-col gap-6">
         <span className="text-meta text-[var(--color-text-muted)]">
-          THE LLM TRACKER
+          LLM TRACKER
         </span>
         <h1 className="max-w-3xl text-display-lg text-[var(--color-text-primary)] sm:text-display-xl">
-          How to use the coding LLMs in 2026,
+          What&apos;s shipping across Claude,
           <br />
-          kept current automatically.
+          OpenAI &amp; Gemini — tracked for you.
         </h1>
         <p className="max-w-2xl text-ui-lg text-[var(--color-text-secondary)]">
-          One self-updating reference across Claude, OpenAI, and Gemini. Every
-          release, CLI change, and model is version-pinned and re-verified as
-          it ships — so stale advice flags itself instead of quietly misleading
-          you. Pick a provider to dive in.
+          One self-updating reference for all three. Claude Code and Codex are
+          the coding headliners; the changelogs, CLI releases, and model
+          catalogs are version-pinned and re-verified as each lands — so stale
+          advice flags itself instead of quietly misleading you. Pick a
+          provider to dive in.
         </p>
       </div>
     </section>

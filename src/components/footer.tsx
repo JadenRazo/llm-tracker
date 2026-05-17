@@ -35,8 +35,8 @@ export function Footer() {
             </a>
           </p>
           <p>
-            Not affiliated with Anthropic. Data sourced from public APIs, npm, GitHub, and
-            Anthropic&apos;s docs.
+            Not affiliated with Anthropic, OpenAI, or Google. Data sourced from
+            each provider&apos;s public docs, status pages, npm, and GitHub.
           </p>
         </div>
       </div>

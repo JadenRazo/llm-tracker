@@ -157,7 +157,7 @@ export function Header() {
           href="/"
           className="font-display text-lg font-semibold tracking-tight text-[var(--color-text-primary)] sm:text-xl"
         >
-          llm<span className="text-[var(--color-accent)]">.tracker</span>
+          LLM<span className="text-[var(--color-accent)]"> Tracker</span>
         </Link>
 
         <nav

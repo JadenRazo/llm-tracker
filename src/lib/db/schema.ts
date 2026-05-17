@@ -1,4 +1,4 @@
-// Drizzle schema for claude-tracker.
+// Drizzle schema for LLM Tracker.
 //
 // Column naming convention:
 //   - TypeScript keys: camelCase  (e.g. externalId)

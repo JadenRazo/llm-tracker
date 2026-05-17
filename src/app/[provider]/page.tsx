@@ -47,13 +47,17 @@ export async function generateMetadata({
   if (!p) return { title: "Not found" };
   const meta = getProviderMeta(p);
   return {
-    title: `How to use ${meta.label} — tracker`,
+    // Resolves via the root template to e.g. "Claude Code — LLM Tracker".
+    title: meta.toolName,
     description: meta.tagline,
   };
 }
 
 // Force dynamic — every section reads live DB rows; the Docker build runs
-// without DATABASE_URL and would otherwise ship an empty page.
+// without DATABASE_URL and would otherwise ship an empty page. Unknown
+// providers are hard-404'd upstream by src/middleware.ts (a top-level
+// dynamic-segment `dynamicParams = false` only soft-404s in this Next
+// version, so the gate lives in middleware, not here).
 export const dynamic = "force-dynamic";
 
 interface ProviderFeed {
@@ -155,7 +159,7 @@ function LearnHero({
     >
       <div className="flex flex-col gap-6">
         <div className="flex flex-wrap items-center gap-3 text-meta text-[var(--color-text-muted)]">
-          <span>{meta.label.toUpperCase()} TRACKER</span>
+          <span>{meta.label.toUpperCase()} · LLM TRACKER</span>
           {latestCli ? (
             <>
               <span aria-hidden>·</span>
@@ -170,7 +174,7 @@ function LearnHero({
           ) : null}
         </div>
         <h1 className="max-w-3xl text-display-lg text-[var(--color-text-primary)] sm:text-display-xl">
-          How to use {meta.label} in 2026,
+          How to use {meta.toolName} in 2026,
           <br />
           kept current automatically.
         </h1>

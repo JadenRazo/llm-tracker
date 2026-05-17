@@ -112,7 +112,7 @@ async function fetchRepoMeta(slug: string, token: string | undefined): Promise<R
   const headers: Record<string, string> = {
     Accept: "application/vnd.github+json",
     "X-GitHub-Api-Version": "2022-11-28",
-    "User-Agent": "claude-tracker/0.1 (+https://claude.raizhost.com)",
+    "User-Agent": "llm-tracker/0.1 (+https://llm.raizhost.com)",
   };
   if (token) headers.Authorization = `Bearer ${token}`;
   try {

@@ -123,7 +123,7 @@ export async function fetchConditional(
   const timeoutMs = options.timeoutMs ?? 30_000;
 
   const headers: Record<string, string> = {
-    "User-Agent": "claude-tracker/0.1 (+https://claude.raizhost.com)",
+    "User-Agent": "llm-tracker/0.1 (+https://llm.raizhost.com)",
     ...(options.headers ?? {}),
   };
   if (etag) headers["If-None-Match"] = etag;

@@ -1,15 +1,18 @@
 services:
-  claude-tracker:
+  llm-tracker:
     build: .
-    container_name: claude-tracker
+    container_name: llm-tracker
     restart: unless-stopped
     mem_limit: 512m
     cpus: 1.0
     ports:
       - "127.0.0.1:3200:3000"
     environment:
-      # Connect directly to shared-postgres over the shared_network (no host-loopback hop)
+      # Connect directly to shared-postgres over the shared_network (no host-loopback hop).
+      # NOTE: the `claude_tracker` DB name is the existing physical database;
+      # renaming it is a data migration (out of scope here), not a rebrand string.
       - DATABASE_URL=postgresql://portfolio_admin:portfol10Adm1nP%40ssw0rd@shared-postgres:5432/claude_tracker
+      - NEXT_PUBLIC_SITE_URL=${NEXT_PUBLIC_SITE_URL:-https://llm.raizhost.com}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
       - GITHUB_TOKEN=${GITHUB_TOKEN:-}
       - ADMIN_TOKEN=${ADMIN_TOKEN}

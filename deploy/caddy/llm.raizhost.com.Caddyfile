@@ -1,0 +1,69 @@
+# ============================================================================
+# LLM Tracker — Caddy vhost for llm.raizhost.com (+ claude.raizhost.com 301)
+# ============================================================================
+#
+# This file lives in the repo for review/versioning. Applying it requires
+# hands on the INFRA / reverse-proxy host (the box running Caddy in front of
+# the Docker container) — it CANNOT be applied from the build/dev environment.
+#
+# APPLY STEPS (run on the infra host as a user with rights to /etc/caddy):
+#
+#   1. Copy this file onto the infra host, e.g.:
+#        sudo install -m 0644 llm.raizhost.com.Caddyfile \
+#          /etc/caddy/sites/llm.raizhost.com.Caddyfile
+#      (create /etc/caddy/sites/ if your main Caddyfile doesn't already
+#       `import` a sites dir.)
+#
+#   2. Ensure the main /etc/caddy/Caddyfile includes this file. If it doesn't
+#      already have an import for the sites dir, add ONE line to it:
+#        import /etc/caddy/sites/*.Caddyfile
+#
+#   3. Validate before reloading:
+#        caddy validate --config /etc/caddy/Caddyfile
+#
+#   4. Reload (zero-downtime; pick whichever matches the install):
+#        sudo systemctl reload caddy
+#      — or, if Caddy is run via the API/CLI directly:
+#        sudo caddy reload --config /etc/caddy/Caddyfile
+#
+# ASSUMPTIONS (verify on the infra host; adjust if they differ):
+#   * The app container publishes 127.0.0.1:3200 -> container:3000
+#     (per docker-compose.yml: ports "127.0.0.1:3200:3000"). Caddy runs on
+#     the SAME host, so it proxies to 127.0.0.1:3200.
+#   * The *.raizhost.com wildcard cert/key are present on the infra host at
+#     /etc/caddy/ssl/raizhost.crt and /etc/caddy/ssl/raizhost.key
+#     (per the global infra note). If the key has a different filename,
+#     update both `tls` lines below to match.
+#   * DNS A/AAAA for llm.raizhost.com and claude.raizhost.com both point at
+#     this infra host.
+# ============================================================================
+
+llm.raizhost.com {
+	tls /etc/caddy/ssl/raizhost.crt /etc/caddy/ssl/raizhost.key
+
+	encode gzip zstd
+
+	# Mirror next.config.ts headers() so the edge and the app agree. Next
+	# also sets these; Caddy setting them is belt-and-suspenders and covers
+	# any non-Next responses (e.g. proxy errors).
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		X-Frame-Options "DENY"
+		-Server
+	}
+
+	reverse_proxy 127.0.0.1:3200 {
+		header_up X-Forwarded-Proto https
+		header_up X-Real-IP {remote_host}
+	}
+}
+
+# Old domain → permanent 301 to the rebranded domain, preserving the path +
+# query. Uses the same wildcard cert (covers claude.raizhost.com too).
+claude.raizhost.com {
+	tls /etc/caddy/ssl/raizhost.crt /etc/caddy/ssl/raizhost.key
+
+	redir https://llm.raizhost.com{uri} permanent
+}
