@@ -57,8 +57,15 @@ const ANCHOR_GAP = 8;
  * Drives a portal-rendered popover anchored to a trigger button. The panel is
  * clamped inside the visual viewport on every scroll/resize/zoom so it cannot
  * escape its bounds on small screens, mobile keyboard insets, or pinch-zoom.
+ *
+ * @param extraPanelRef - Optional additional ref whose subtree should be
+ *   excluded from the click-outside dismissal check. Used by useDocOverlay to
+ *   exclude the bottom-sheet panel so the window pointerdown listener does not
+ *   close the sheet when the user taps inside it.
  */
-export function useAnchoredPopover(): AnchoredPopover {
+export function useAnchoredPopover(
+  extraPanelRef?: RefObject<HTMLElement | null>,
+): AnchoredPopover {
   const tipId = useId();
   const anchorRef = useRef<HTMLButtonElement | null>(null);
   const tipRef = useRef<HTMLDivElement | null>(null);
@@ -139,6 +146,7 @@ export function useAnchoredPopover(): AnchoredPopover {
       if (!target) return;
       if (anchorRef.current?.contains(target)) return;
       if (tipRef.current?.contains(target)) return;
+      if (extraPanelRef?.current?.contains(target)) return;
       setOpen(false);
     };
 
@@ -157,7 +165,7 @@ export function useAnchoredPopover(): AnchoredPopover {
       vv?.removeEventListener("resize", onResize);
       vv?.removeEventListener("scroll", onScroll);
     };
-  }, [open, compute]);
+  }, [open, compute, extraPanelRef]);
 
   const triggerProps: TriggerProps = {
     ref: anchorRef,
@@ -181,7 +189,11 @@ export function useAnchoredPopover(): AnchoredPopover {
       suppressFocusOpenRef.current = false;
       setOpen(false);
     },
-    onClick: () => {
+    onClick: (e) => {
+      // Stop bubbling so the trigger does not also fire an ancestor <a> link
+      // when the DocPopover button is rendered inside linked content (e.g. MDX
+      // fallback anchor wrapping a resolved code token).
+      e.stopPropagation();
       suppressFocusOpenRef.current = false;
       setOpen((o) => !o);
     },
@@ -243,10 +255,12 @@ export interface DocOverlay {
  * verbatim rather than reimplemented.
  */
 export function useDocOverlay(): DocOverlay {
-  const base = useAnchoredPopover();
-  const { open, setOpen, mounted, triggerProps } = base;
   const sheetId = useId();
   const sheetRef = useRef<HTMLDivElement | null>(null);
+  // Pass sheetRef as the extra-exclusion ref so the base's window pointerdown
+  // listener does not call setOpen(false) when the user taps inside the sheet.
+  const base = useAnchoredPopover(sheetRef);
+  const { open, setOpen, mounted, triggerProps } = base;
   const lastFocusedRef = useRef<HTMLElement | null>(null);
   const [isSheet, setIsSheet] = useState(false);
 
