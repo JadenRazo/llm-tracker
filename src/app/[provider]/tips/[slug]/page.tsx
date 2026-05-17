@@ -9,9 +9,10 @@ import { getCurrentClaudeCodeVersion } from "@/lib/current-cli";
 import { computeStaleness } from "@/lib/staleness";
 import { ArticleHeader } from "@/components/ui/article-header";
 import { Container } from "@/components/ui/container";
+import { parseProviderParam } from "@/lib/provider-route";
 
 interface PageProps {
-  params: Promise<{ slug: string }>;
+  params: Promise<{ provider: string; slug: string }>;
 }
 
 // ISR every 5 min — staleness reads getCurrentClaudeCodeVersion() which has
@@ -19,11 +20,20 @@ interface PageProps {
 // hit Next's page cache instead of re-rendering MDX + querying the DB.
 export const revalidate = 300;
 
-export async function generateStaticParams() {
-  return listTips().map((t) => ({ slug: t.slug }));
+// Only real provider×slug pairs are valid; anything else 404s at the routing
+// layer with a true 404 status rather than a streamed soft-404.
+export const dynamicParams = false;
+
+export function generateStaticParams() {
+  return listTips().map((t) => ({
+    provider: t.frontmatter.provider,
+    slug: t.slug,
+  }));
 }
 
-export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
+export async function generateMetadata({
+  params,
+}: PageProps): Promise<Metadata> {
   const { slug } = await params;
   const tip = getTip(slug);
   if (!tip) return { title: "Not found" };
@@ -34,9 +44,13 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 }
 
 export default async function TipPage({ params }: PageProps) {
-  const { slug } = await params;
+  const { provider: raw, slug } = await params;
+  const provider = parseProviderParam(raw);
+  if (!provider) notFound();
+
   const tip = getTip(slug);
-  if (!tip) notFound();
+  // 404 if the tip doesn't exist *or* belongs to a different provider.
+  if (!tip || tip.frontmatter.provider !== provider) notFound();
 
   const currentCli = await getCurrentClaudeCodeVersion();
   const staleness = computeStaleness(tip.frontmatter, currentCli);
@@ -44,7 +58,7 @@ export default async function TipPage({ params }: PageProps) {
   return (
     <Container size="narrow">
       <Link
-        href="/tips"
+        href={`/${provider}/tips`}
         className="inline-flex items-center gap-1.5 text-ui-sm text-[var(--color-text-muted)] transition-colors hover:text-[var(--color-highlight)]"
       >
         <ArrowLeft className="size-4" aria-hidden />
@@ -62,7 +76,10 @@ export default async function TipPage({ params }: PageProps) {
         />
 
         <div className="prose max-w-[65ch]">
-          <MDXRemote source={tip.body} components={mdxDocComponents} />
+          <MDXRemote
+            source={tip.body}
+            components={mdxDocComponents(provider)}
+          />
         </div>
 
         <p className="mt-12 text-meta text-[var(--color-text-muted)]">

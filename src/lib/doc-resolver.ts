@@ -2,13 +2,21 @@
 // `cli_reference` row, so MDX bodies and curated copy can render the rich
 // DocPopover instead of a bare navigating link.
 //
-// One DB query builds an in-memory index, cached per process with a short TTL
-// (same idiom as src/lib/current-cli.ts). Resolution is pure string work on
-// the cached index — cheap enough to call once per token per render.
+// Provider-scoped (Phase 2.3): a token rendered on `/openai/...` must resolve
+// the OpenAI row, not the Claude one. We keep one in-memory index *per
+// provider*, each built from `cli_reference WHERE provider = $1`. Scoping is
+// by the `provider` column only — never by id format (claude rows are
+// `{kind}:{name}`, non-claude `{provider}:{kind}:{name}`, but that's an
+// ingest detail the resolver must not depend on).
+//
+// Each index is cached per process with a short TTL (same idiom as
+// src/lib/current-cli.ts). Resolution is pure string work on the cached index.
 
+import { eq } from "drizzle-orm";
 import { tryGetDb } from "@/lib/db";
 import { cliReference } from "@/lib/db/schema";
 import type { CliReference } from "@/lib/db/schema";
+import { DEFAULT_PROVIDER, type Provider } from "@/lib/providers";
 
 const CACHE_TTL_MS = 5 * 60 * 1000;
 const DOCS_HOST = "code.claude.com";
@@ -22,7 +30,9 @@ interface DocIndex {
   byDocsPath: Map<string, CliReference>;
 }
 
-let cache: { index: DocIndex; expiresAt: number } | null = null;
+// One cache slot per provider — keyed so a Claude render and an OpenAI render
+// don't fight over a single shared index.
+const cache = new Map<Provider, { index: DocIndex; expiresAt: number }>();
 
 function aliasesOf(row: CliReference): string[] {
   const raw = (row.metadata as Record<string, unknown> | null)?.aliases;
@@ -68,17 +78,24 @@ function buildIndex(rows: CliReference[]): DocIndex {
   return { byToken, byAlias, byDocsPath };
 }
 
-async function getIndex(): Promise<DocIndex | null> {
+async function getIndex(provider: Provider): Promise<DocIndex | null> {
   const now = Date.now();
-  if (cache && cache.expiresAt > now) return cache.index;
+  const hit = cache.get(provider);
+  if (hit && hit.expiresAt > now) return hit.index;
 
   const db = tryGetDb();
   if (!db) return null;
 
   try {
-    const rows = await db.select().from(cliReference);
+    // Scope by the provider column — the authoritative ownership signal. Rows
+    // backfilled before Phase 2.0 carry 'claude'; that's why DEFAULT_PROVIDER
+    // is the resolver's fallback everywhere below.
+    const rows = await db
+      .select()
+      .from(cliReference)
+      .where(eq(cliReference.provider, provider));
     const index = buildIndex(rows);
-    cache = { index, expiresAt: now + CACHE_TTL_MS };
+    cache.set(provider, { index, expiresAt: now + CACHE_TTL_MS });
     return index;
   } catch {
     // Don't cache failures — next render retries.
@@ -96,7 +113,7 @@ function normalizeToken(raw: string): string {
 }
 
 /**
- * Resolve a free-text token to its cli_reference row, or null.
+ * Resolve a free-text token to its cli_reference row for `provider`, or null.
  *
  * Handles: slash commands (`/init`), flags (`--print`) and their aliases
  * (`-p`), hook events (`PreToolUse`), and CLI subcommands. For subcommands
@@ -105,11 +122,12 @@ function normalizeToken(raw: string): string {
  */
 export async function resolveDocToken(
   raw: string,
+  provider: Provider = DEFAULT_PROVIDER,
 ): Promise<CliReference | null> {
   const token = normalizeToken(raw);
   if (!token) return null;
 
-  const index = await getIndex();
+  const index = await getIndex(provider);
   if (!index) return null;
 
   const lower = token.toLowerCase();
@@ -135,8 +153,11 @@ export async function resolveDocToken(
 }
 
 /** Resolve a code.claude.com docs URL to its cli_reference row, or null. */
-export async function resolveDocUrl(href: string): Promise<CliReference | null> {
-  const index = await getIndex();
+export async function resolveDocUrl(
+  href: string,
+  provider: Provider = DEFAULT_PROVIDER,
+): Promise<CliReference | null> {
+  const index = await getIndex(provider);
   if (!index) return null;
 
   const key = docsPathKey(href);

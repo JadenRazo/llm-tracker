@@ -1,14 +1,13 @@
-// /status — Anthropic service status and incident history.
-//
-// Renders a full-width hero card whose tint reflects the current operational
-// state, followed by a vertical, dotted-rail timeline of recent incidents.
-// Data shape is unchanged from the original page; only layout and primitives
-// were redesigned for Phase C.
+// /[provider]/status — provider service status + incident history. Reads the
+// provider's status source (anthropic_status / openai_status / gemini_status).
+// Layout unchanged from the legacy /status: tinted hero card + dotted-rail
+// incident timeline.
 
 import { and, desc, eq, ne } from "drizzle-orm";
 import { MDXRemote } from "next-mdx-remote/rsc";
 import { Activity, ShieldCheck } from "lucide-react";
 import type { Metadata } from "next";
+import { notFound } from "next/navigation";
 import { tryGetDb } from "@/lib/db";
 import { events } from "@/lib/db/schema";
 import type { Event } from "@/lib/db/schema";
@@ -20,8 +19,26 @@ import { Card } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { RelativeTime } from "@/components/ui/relative-time";
 import { EventCard } from "@/components/event-card";
+import { PROVIDERS, type Provider } from "@/lib/providers";
+import { parseProviderParam } from "@/lib/provider-route";
+import { getProviderMeta } from "@/lib/provider-meta";
 
-export const metadata: Metadata = { title: "Status" };
+interface PageProps {
+  params: Promise<{ provider: string }>;
+}
+
+export function generateStaticParams() {
+  return PROVIDERS.map((provider) => ({ provider }));
+}
+
+export async function generateMetadata({
+  params,
+}: PageProps): Promise<Metadata> {
+  const { provider } = await params;
+  const p = parseProviderParam(provider);
+  return { title: p ? `${getProviderMeta(p).label} status` : "Not found" };
+}
+
 // DB-backed: force dynamic so the page always has live content (the Docker
 // build runs without DATABASE_URL and would otherwise ship an empty cache).
 export const dynamic = "force-dynamic";
@@ -29,11 +46,8 @@ export const dynamic = "force-dynamic";
 type StatusTone = "operational" | "degraded" | "outage" | "neutral";
 
 interface ToneMeta {
-  /** CSS color expression for the accent border + dot. */
   color: string;
-  /** Human label shown in the hero. */
   label: string;
-  /** Dot pulses when the service isn't fully operational. */
   pulse: boolean;
 }
 
@@ -44,10 +58,6 @@ const TONE_META: Record<StatusTone, ToneMeta> = {
   neutral: { color: "var(--color-text-muted)", label: "Unknown", pulse: false },
 };
 
-/**
- * Case-insensitive substring match against a status title, mapped to one of
- * four tones. Priority order: outage > degraded > operational > neutral.
- */
 function classifyStatus(title: string | null | undefined): StatusTone {
   if (!title) return "neutral";
   const s = title.toLowerCase();
@@ -61,7 +71,9 @@ function classifyStatus(title: string | null | undefined): StatusTone {
   return "neutral";
 }
 
-async function loadStatus(): Promise<{ current: Event | null; incidents: Event[] }> {
+async function loadStatus(
+  source: string,
+): Promise<{ current: Event | null; incidents: Event[] }> {
   const db = tryGetDb();
   if (!db) return { current: null, incidents: [] };
   try {
@@ -69,12 +81,12 @@ async function loadStatus(): Promise<{ current: Event | null; incidents: Event[]
       db
         .select()
         .from(events)
-        .where(and(eq(events.source, "anthropic_status"), eq(events.externalId, "current")))
+        .where(and(eq(events.source, source), eq(events.externalId, "current")))
         .limit(1),
       db
         .select()
         .from(events)
-        .where(and(eq(events.source, "anthropic_status"), ne(events.externalId, "current")))
+        .where(and(eq(events.source, source), ne(events.externalId, "current")))
         .orderBy(desc(events.publishedAt))
         .limit(50),
     ]);
@@ -84,26 +96,29 @@ async function loadStatus(): Promise<{ current: Event | null; incidents: Event[]
   }
 }
 
-export default async function StatusPage() {
-  const { current, incidents } = await loadStatus();
+export default async function StatusPage({ params }: PageProps) {
+  const { provider: raw } = await params;
+  const provider = parseProviderParam(raw);
+  if (!provider) notFound();
+
+  const meta = getProviderMeta(provider);
+  const { current, incidents } = await loadStatus(meta.statusSource);
   const tone = classifyStatus(current?.title);
-  const meta = TONE_META[tone];
+  const toneMeta = TONE_META[tone];
 
   return (
     <Container>
       <PageHeader
         icon={Activity}
         eyebrow="UPTIME"
-        title="Anthropic status"
-        description="Live system status and recent incidents from status.claude.com. Polled every 10 minutes."
+        title={`${meta.label} status`}
+        description={`Live system status and recent incidents for ${meta.label}. Polled every 10 minutes.`}
       />
 
       <div className="space-y-[var(--space-section)]">
         <section className="animate-in">
           {current ? (
-            // `--tone` is declared on the outer wrapper so every descendant —
-            // border, dot, any future accent — can read a single variable.
-            <div style={{ ["--tone" as string]: meta.color }}>
+            <div style={{ ["--tone" as string]: toneMeta.color }}>
               <Card
                 variant="raised"
                 className="border-l-[6px] border-l-[var(--tone)] p-5 sm:p-6 md:p-8"
@@ -112,7 +127,7 @@ export default async function StatusPage() {
                   <span
                     className={
                       "inline-block size-2.5 rounded-full" +
-                      (meta.pulse ? " animate-pulse-dot" : "")
+                      (toneMeta.pulse ? " animate-pulse-dot" : "")
                     }
                     style={{ backgroundColor: "var(--tone)" }}
                     aria-hidden
@@ -140,7 +155,7 @@ export default async function StatusPage() {
               icon={ShieldCheck}
               title="Status stream warming up"
               description="No status snapshot has landed yet."
-              hint="status.claude.com is polled every 10 minutes."
+              hint={`The ${meta.label} status source is polled every 10 minutes.`}
             />
           )}
         </section>
@@ -159,9 +174,6 @@ export default async function StatusPage() {
               hint="Polled every 10 minutes — anything new will show up here first."
             />
           ) : (
-            // Vertical timeline. The dotted rail is drawn by a single
-            // `before:` pseudo-element on the <ol>; each <li> carries an
-            // absolute-positioned dot that sits on the rail at md+.
             <ol className="relative space-y-6 md:pl-10 md:before:absolute md:before:left-[4px] md:before:top-0 md:before:bottom-0 md:before:border-l md:before:border-dashed md:before:border-[var(--color-border)]/40">
               {incidents.map((inc) => (
                 <li key={inc.id} className="relative">

@@ -1,12 +1,14 @@
-// Version-grouped Claude Code release ladder. Merges npm, CHANGELOG, and
-// GitHub release sources into one entry per version. MDX bodies are
-// pre-sanitized to neutralize bare JSX-like tokens (e.g. `<your-custom-agent>`)
-// that would otherwise break the prerender.
+// Version-grouped release ladder, scoped to one provider. Merges that
+// provider's npm / CHANGELOG / GitHub-release sources into one entry per
+// version (Claude: claude-code; OpenAI: Codex; Gemini: gemini-cli). MDX
+// bodies are pre-sanitized to neutralize bare JSX-like tokens that would
+// otherwise break the prerender.
 
 import { MDXRemote } from "next-mdx-remote/rsc";
 import { mdxDocComponents } from "@/components/mdx-doc-components";
-import { desc, inArray } from "drizzle-orm";
+import { desc, inArray, sql } from "drizzle-orm";
 import type { Metadata } from "next";
+import { notFound } from "next/navigation";
 import { GitBranch, Package, Terminal } from "lucide-react";
 import { tryGetDb } from "@/lib/db";
 import { events } from "@/lib/db/schema";
@@ -19,25 +21,40 @@ import { Container } from "@/components/ui/container";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
 import { RelativeTime } from "@/components/ui/relative-time";
+import { PROVIDERS, type Provider } from "@/lib/providers";
+import { parseProviderParam } from "@/lib/provider-route";
+import { getProviderMeta } from "@/lib/provider-meta";
 
-export const metadata: Metadata = { title: "Claude Code" };
+interface PageProps {
+  params: Promise<{ provider: string }>;
+}
+
+export function generateStaticParams() {
+  return PROVIDERS.map((provider) => ({ provider }));
+}
+
+export async function generateMetadata({
+  params,
+}: PageProps): Promise<Metadata> {
+  const { provider } = await params;
+  const p = parseProviderParam(provider);
+  return { title: p ? `${getProviderMeta(p).toolName} releases` : "Not found" };
+}
+
 // DB-backed: the Docker build runs without DATABASE_URL, so ISR would ship an
 // empty page. Force dynamic rendering to always query fresh.
 export const dynamic = "force-dynamic";
 
-async function loadReleases(): Promise<Event[]> {
+async function loadReleases(provider: Provider): Promise<Event[]> {
   const db = tryGetDb();
   if (!db) return [];
+  const sources = getProviderMeta(provider).releaseSources;
   try {
     return await db
       .select()
       .from(events)
       .where(
-        inArray(events.source, [
-          "npm_claude_code",
-          "claude_code_changelog",
-          "github_releases_claude_code",
-        ]),
+        sql`${events.provider} = ${provider} and ${inArray(events.source, [...sources])}`,
       )
       .orderBy(desc(events.publishedAt));
   } catch {
@@ -45,14 +62,8 @@ async function loadReleases(): Promise<Event[]> {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Version grouping
-// ---------------------------------------------------------------------------
-
 const VERSION_RE = /v?(\d+\.\d+\.\d+(?:-[a-z0-9.]+)?)/i;
 
-/** Extracts a semver-ish version string from an event's title. Falls back to
- * externalId if the title has none. Returns null when neither matches. */
 function extractVersion(ev: Event): string | null {
   const fromTitle = ev.title.match(VERSION_RE);
   if (fromTitle) return fromTitle[1];
@@ -64,18 +75,16 @@ function extractVersion(ev: Event): string | null {
 interface ReleaseGroup {
   version: string;
   events: Event[];
-  /** Earliest publishedAt across the group's events. */
   date: Date | null;
-  /** Most recent publishedAt — used only for sorting groups. */
   latest: Date | null;
 }
 
 /** Source display order within a group: npm first, then CHANGELOG, then GitHub. */
-const SOURCE_ORDER: Record<string, number> = {
-  npm_claude_code: 0,
-  claude_code_changelog: 1,
-  github_releases: 2,
-};
+function sourceRank(source: string): number {
+  if (source.includes("npm")) return 0;
+  if (source.includes("changelog")) return 1;
+  return 2;
+}
 
 function groupByVersion(rows: Event[]): ReleaseGroup[] {
   const groups = new Map<string, ReleaseGroup>();
@@ -109,9 +118,7 @@ function groupByVersion(rows: Event[]): ReleaseGroup[] {
   }
 
   for (const g of groups.values()) {
-    g.events.sort(
-      (a, b) => (SOURCE_ORDER[a.source] ?? 99) - (SOURCE_ORDER[b.source] ?? 99),
-    );
+    g.events.sort((a, b) => sourceRank(a.source) - sourceRank(b.source));
   }
 
   return Array.from(groups.values()).sort((a, b) => {
@@ -121,41 +128,37 @@ function groupByVersion(rows: Event[]): ReleaseGroup[] {
   });
 }
 
-// ---------------------------------------------------------------------------
-// Page
-// ---------------------------------------------------------------------------
+export default async function ReleasesPage({ params }: PageProps) {
+  const { provider: raw } = await params;
+  const provider = parseProviderParam(raw);
+  if (!provider) notFound();
 
-export default async function ClaudeCodePage() {
-  const rows = await loadReleases();
+  const meta = getProviderMeta(provider);
+  const rows = await loadReleases(provider);
   const groups = groupByVersion(rows);
+  const components = mdxDocComponents(provider);
 
   return (
     <Container>
       <PageHeader
         icon={Terminal}
         eyebrow="RELEASES"
-        title="Claude Code"
-        description="Every npm release, CHANGELOG entry, and GitHub release note from anthropics/claude-code — merged by version."
+        title={meta.toolName}
+        description={`Every npm release, CHANGELOG entry, and GitHub release note for ${meta.toolName} — merged by version.`}
         actions={
           <>
-            <a
-              href="https://www.npmjs.com/package/@anthropic-ai/claude-code"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              <Badge variant="outline" icon={Package}>
-                npm
-              </Badge>
-            </a>
-            <a
-              href="https://github.com/anthropics/claude-code/releases"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              <Badge variant="outline" icon={GitBranch}>
-                GitHub
-              </Badge>
-            </a>
+            {meta.releaseLinks.map((link, i) => (
+              <a
+                key={link.href}
+                href={link.href}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <Badge variant="outline" icon={i === 0 ? Package : GitBranch}>
+                  {link.label}
+                </Badge>
+              </a>
+            ))}
           </>
         }
       />
@@ -164,7 +167,7 @@ export default async function ClaudeCodePage() {
         <EmptyState
           icon={Terminal}
           title="No releases yet"
-          description="The release ladder merges npm, CHANGELOG.md, and GitHub once ingest completes."
+          description="The release ladder merges npm, CHANGELOG, and GitHub once ingest completes."
           hint="Polled every 30 minutes."
         />
       ) : (
@@ -181,7 +184,11 @@ export default async function ClaudeCodePage() {
                       <h2 className="text-display-lg font-mono text-[var(--color-text-primary)]">
                         v{group.version}
                       </h2>
-                      <RelativeTime date={group.date} withAbsolute className="mt-1 block" />
+                      <RelativeTime
+                        date={group.date}
+                        withAbsolute
+                        className="mt-1 block"
+                      />
                     </div>
 
                     <div className="min-w-0 flex-1">
@@ -202,7 +209,11 @@ export default async function ClaudeCodePage() {
 
                       <div className="space-y-4">
                         {group.events.map((ev) => (
-                          <ReleaseBody key={ev.id} event={ev} />
+                          <ReleaseBody
+                            key={ev.id}
+                            event={ev}
+                            components={components}
+                          />
                         ))}
                       </div>
                     </div>
@@ -217,12 +228,20 @@ export default async function ClaudeCodePage() {
   );
 }
 
-function ReleaseBody({ event }: { event: Event }) {
+function ReleaseBody({
+  event,
+  components,
+}: {
+  event: Event;
+  components: ReturnType<typeof mdxDocComponents>;
+}) {
   const meta = getSource(event.source);
   return (
     <div className="rounded-md border border-[var(--color-border)]/40 bg-[color-mix(in_oklab,var(--color-surface-raised)_40%,transparent)] p-4">
       <div className="mb-2 flex flex-wrap items-center gap-2">
-        <span className="text-meta text-[var(--color-text-muted)]">{meta.longLabel}</span>
+        <span className="text-meta text-[var(--color-text-muted)]">
+          {meta.longLabel}
+        </span>
         {event.url ? (
           <a
             href={event.url}
@@ -236,10 +255,7 @@ function ReleaseBody({ event }: { event: Event }) {
       </div>
       {event.bodyMd ? (
         <div className="prose prose-sm max-w-none">
-          <MDXRemote
-            source={sanitizeMdx(event.bodyMd)}
-            components={mdxDocComponents}
-          />
+          <MDXRemote source={sanitizeMdx(event.bodyMd)} components={components} />
         </div>
       ) : (
         <p className="text-ui-sm text-[var(--color-text-muted)]">{event.title}</p>

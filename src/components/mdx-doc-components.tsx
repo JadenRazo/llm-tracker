@@ -5,14 +5,22 @@
 // DocPopover with the (serializable) row. When nothing resolves they fall
 // back to a plain navigating link / inline <code>, so unrelated markup is
 // untouched.
+//
+// Phase 2.3: resolution is provider-scoped. `mdxDocComponents(provider)`
+// returns a component map bound to that provider so a token in an OpenAI
+// guide resolves the OpenAI cli_reference row. Call sites under
+// `/[provider]/...` pass the active provider; the default is Claude (legacy
+// behavior preserved).
 
 import type { AnchorHTMLAttributes, HTMLAttributes, ReactNode } from "react";
+import type { MDXComponents } from "mdx/types";
 import { DocPopover } from "@/components/ui/doc-popover";
 import {
   isDocsUrl,
   resolveDocToken,
   resolveDocUrl,
 } from "@/lib/doc-resolver";
+import { DEFAULT_PROVIDER, type Provider } from "@/lib/providers";
 
 /** Plain text of a (possibly nested) MDX child, for token matching. */
 function textOf(children: ReactNode): string {
@@ -33,15 +41,20 @@ function textOf(children: ReactNode): string {
 }
 
 type AnchorProps = AnchorHTMLAttributes<HTMLAnchorElement>;
+type CodeProps = HTMLAttributes<HTMLElement>;
 
 /**
- * `<a>` override. If the href is a resolvable code.claude.com docs URL, render
- * the DocPopover inline-trigger (keeping the original link text). Otherwise a
- * plain anchor — external links open in a new tab.
+ * Build the MDX component map for `provider`. Cached per provider so repeated
+ * MDXRemote renders within a request reuse the same component identities.
  */
-async function MdxAnchor({ href, children, ...rest }: AnchorProps) {
+const cache = new Map<Provider, MDXComponents>();
+
+async function MdxAnchorImpl(
+  provider: Provider,
+  { href, children, ...rest }: AnchorProps,
+) {
   if (href && isDocsUrl(href)) {
-    const row = await resolveDocUrl(href);
+    const row = await resolveDocUrl(href, provider);
     if (row) {
       return (
         <DocPopover item={row} variant="inline">
@@ -63,16 +76,10 @@ async function MdxAnchor({ href, children, ...rest }: AnchorProps) {
   );
 }
 
-type CodeProps = HTMLAttributes<HTMLElement>;
-
-/**
- * Inline `<code>` override. If the code text is a known command/flag/hook
- * token, render the DocPopover inline-trigger; otherwise a normal <code>.
- * Block code (```fenced```) is wrapped in <pre><code> by MDX — those <code>
- * children are arrays/elements, not bare token strings, so they fall through
- * to the plain branch and are left alone.
- */
-async function MdxCode({ children, ...rest }: CodeProps) {
+async function MdxCodeImpl(
+  provider: Provider,
+  { children, ...rest }: CodeProps,
+) {
   const text = textOf(children).trim();
   // Cheap pre-filter: only the shapes a token can take. Avoids a resolver
   // call (and its index access) for ordinary inline code.
@@ -83,7 +90,7 @@ async function MdxCode({ children, ...rest }: CodeProps) {
     /^claude\s+[\w-]+/.test(text);
 
   if (tokenish) {
-    const row = await resolveDocToken(text);
+    const row = await resolveDocToken(text, provider);
     if (row) {
       return (
         <DocPopover item={row} variant="inline">
@@ -96,8 +103,22 @@ async function MdxCode({ children, ...rest }: CodeProps) {
   return <code {...rest}>{children}</code>;
 }
 
-/** Pass to every `<MDXRemote components={...} />`. */
-export const mdxDocComponents = {
-  a: MdxAnchor,
-  code: MdxCode,
-};
+/**
+ * Returns the `components` prop for `<MDXRemote />`, with link/token
+ * resolution scoped to `provider`.
+ */
+export function mdxDocComponents(
+  provider: Provider = DEFAULT_PROVIDER,
+): MDXComponents {
+  const cached = cache.get(provider);
+  if (cached) return cached;
+
+  // Bind the provider into stable named components so React's reconciler
+  // sees one component type per provider, not a fresh closure per render.
+  const map: MDXComponents = {
+    a: (props: AnchorProps) => MdxAnchorImpl(provider, props),
+    code: (props: CodeProps) => MdxCodeImpl(provider, props),
+  };
+  cache.set(provider, map);
+  return map;
+}
