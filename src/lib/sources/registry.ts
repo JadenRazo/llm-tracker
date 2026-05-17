@@ -17,9 +17,31 @@ import type { RunResult } from "@/lib/poller/runner";
 /** Scheduling tier — drives the cron cadence (T1 10m / T2 30m / T3 2h). */
 export type SourceTier = 1 | 2 | 3;
 
+/**
+ * Authoritative key contract. Every descriptor's `key` must be a member —
+ * adding a source (incl. new providers in later phases) is a deliberate,
+ * compile-enforced edit here, restoring the exhaustiveness the pre-2.1
+ * hardcoded union gave. These strings are persisted in poller_runs.source /
+ * events.source — never rename an existing one.
+ */
+export type SourceKey =
+  | "npm_claude_code"
+  | "anthropic_status"
+  | "anthropic_models"
+  | "github_releases_claude_code"
+  | "github_releases_sdk_python"
+  | "github_releases_sdk_typescript"
+  | "github_releases_sdk_go"
+  | "github_releases_agent_sdk_python"
+  | "claude_code_changelog"
+  | "claude_code_reference"
+  | "docs_release_notes"
+  | "anthropic_news"
+  | "mcp_servers";
+
 export interface SourceDescriptor {
   /** Persisted source key — stored verbatim in poller_runs.source / events.source. */
-  key: string;
+  key: SourceKey;
   /** Owning LLM provider — stamped onto rows this source writes. */
   provider: Provider;
   /** Scheduling tier. */

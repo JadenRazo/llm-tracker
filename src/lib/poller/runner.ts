@@ -10,10 +10,11 @@
 
 import { tryGetDb } from "@/lib/db";
 import { pollerRuns } from "@/lib/db/schema";
-import { getSourceDescriptor, SOURCE_REGISTRY } from "@/lib/sources/registry";
+import { getSourceDescriptor } from "@/lib/sources/registry";
 
-/** Every persisted source key, derived from the registry. */
-export type SourceKey = (typeof SOURCE_REGISTRY)[number]["key"];
+/** Every persisted source key — the authoritative contract in the registry. */
+export type { SourceKey } from "@/lib/sources/registry";
+import type { SourceKey } from "@/lib/sources/registry";
 
 export interface RunResult {
   inserted: number;

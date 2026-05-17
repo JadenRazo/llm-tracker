@@ -7,7 +7,7 @@ import { env } from "@/lib/env";
 import { fetchConditional } from "@/lib/poller/conditional-fetch";
 import type { RunResult } from "@/lib/poller/runner";
 import type { Provider } from "@/lib/providers";
-import type { SourceDescriptor } from "@/lib/sources/registry";
+import type { SourceDescriptor, SourceKey } from "@/lib/sources/registry";
 
 const PROVIDER: Provider = "claude";
 
@@ -88,7 +88,7 @@ function runFactory(repo: string, sourceKey: string) {
 
 // Pre-bound descriptors — one per tracked repo. Each uses its own sourceKey so
 // that ETags are cached per-repo (they'd thrash if shared). All Tier 2.
-function githubReleasesSource(repo: string, sourceKey: string): SourceDescriptor {
+function githubReleasesSource(repo: string, sourceKey: SourceKey): SourceDescriptor {
   return { key: sourceKey, provider: PROVIDER, tier: 2, run: runFactory(repo, sourceKey) };
 }
 
