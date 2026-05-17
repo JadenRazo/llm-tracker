@@ -52,9 +52,9 @@ export const events = pgTable(
     publishedAt: timestamp("published_at", { withTimezone: true, mode: "date" }),
     /** sha256 of bodyMd (or a canonical subset) — used for dedupe on re-scrape. */
     contentHash: text("content_hash"),
-    /** Owning LLM provider ("claude" | "openai" | "gemini"). Nullable in Phase
-     *  2.0 (additive); a later migration backfills + sets NOT NULL DEFAULT. */
-    provider: text("provider"),
+    /** Owning LLM provider ("claude" | "openai" | "gemini"). NOT NULL since
+     *  Phase 2.5 (fully backfilled in 2.0); defaults to "claude". */
+    provider: text("provider").notNull().default("claude"),
   },
   (t) => ({
     sourceExternalUnique: uniqueIndex("events_source_external_idx").on(t.source, t.externalId),
@@ -88,9 +88,9 @@ export const models = pgTable(
     capabilities: jsonb("capabilities").$type<Record<string, boolean>>().default(sql`'{}'::jsonb`),
     firstSeenAt: nowTz("first_seen_at"),
     lastSeenAt: nowTz("last_seen_at"),
-    /** Owning LLM provider ("claude" | "openai" | "gemini"). Nullable in Phase
-     *  2.0 (additive); a later migration backfills + sets NOT NULL DEFAULT. */
-    provider: text("provider"),
+    /** Owning LLM provider ("claude" | "openai" | "gemini"). NOT NULL since
+     *  Phase 2.5 (fully backfilled in 2.0); defaults to "claude". */
+    provider: text("provider").notNull().default("claude"),
   },
   (t) => ({
     providerIdx: index("models_provider_idx").on(t.provider),
@@ -126,9 +126,9 @@ export const cliReference = pgTable(
     lastSeenAt: nowTz("last_seen_at"),
     /** Set when we flip a row to deprecated (still rendered, but struck-through). Nullable. */
     deprecatedAt: timestamp("deprecated_at", { withTimezone: true, mode: "date" }),
-    /** Owning LLM provider ("claude" | "openai" | "gemini"). Nullable in Phase
-     *  2.0 (additive); a later migration backfills + sets NOT NULL DEFAULT. */
-    provider: text("provider"),
+    /** Owning LLM provider ("claude" | "openai" | "gemini"). NOT NULL since
+     *  Phase 2.5 (fully backfilled in 2.0); defaults to "claude". */
+    provider: text("provider").notNull().default("claude"),
   },
   (t) => ({
     kindIdx: index("cli_reference_kind_idx").on(t.kind),

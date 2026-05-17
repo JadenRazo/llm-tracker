@@ -4,7 +4,7 @@
 // to the pre-2.3 home (MCP grid + start-here bento + news-driven proof);
 // other providers get the same skeleton minus the Claude-only MCP section.
 
-import { desc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { desc, eq, inArray, sql } from "drizzle-orm";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";

@@ -176,7 +176,7 @@ export default async function HomePage() {
                 const provider = isProvider(e.provider) ? e.provider : null;
                 return (
                   <li
-                    key={`${e.provider ?? "?"}-${e.id}`}
+                    key={`${e.provider}-${e.id}`}
                     className="space-y-1.5"
                   >
                     {provider ? (

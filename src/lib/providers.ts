@@ -1,6 +1,6 @@
-// Provider dimension shared across the schema, content frontmatter, and (later)
-// the source registry. Phase 2.0 introduces this additively: every existing
-// row is Claude, but the column is nullable until a later tightening migration.
+// Provider dimension shared across the schema, content frontmatter, and the
+// source registry. Introduced additively in Phase 2.0; the DB column is NOT
+// NULL DEFAULT 'claude' since the Phase 2.5 tightening migration.
 
 import { z } from "zod";
 
