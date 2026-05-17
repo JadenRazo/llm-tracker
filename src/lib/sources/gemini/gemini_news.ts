@@ -1,3 +1,10 @@
+// Tier 2 (30m, deliberate): this is the Gemini *changelog* proxy serving as
+// the user-approved NEWS substitute (Google has no single Gemini news feed like
+// anthropic.com/news). Because it's the changelog, freshness/latency matters
+// more than for a plain marketing news feed, so it sits at 30m rather than the
+// 2h news tier — but not 10m (the changelog doesn't move that fast and a
+// tighter cadence isn't worth the cost).
+//
 // Fetches the Gemini API changelog (changelog.md.txt) and splits it into one
 // event per `## <Month DD, YYYY>` dated section. This is the user-approved
 // provider-level NEWS proxy for Gemini (Google has no single Gemini news feed

@@ -5,6 +5,7 @@
 // fabricate a notes body — bodyMd stays null.
 // Uses GITHUB_TOKEN if set (5000/hr); otherwise unauthenticated (60/hr).
 
+import { z } from "zod";
 import { tryGetDb } from "@/lib/db";
 import { events } from "@/lib/db/schema";
 import { env } from "@/lib/env";
@@ -17,17 +18,25 @@ const SOURCE_KEY = "openai_codex_releases";
 const PROVIDER: Provider = "openai";
 const REPO = "openai/codex";
 
-interface GithubRelease {
-  id: number;
-  tag_name: string;
-  name: string | null;
-  body: string | null;
-  html_url: string;
-  draft: boolean;
-  prerelease: boolean;
-  published_at: string | null;
-  created_at: string;
-}
+// GitHub releases API is untrusted upstream — validate before reading.
+// .passthrough() so the API's many extra fields don't reject a valid payload.
+const githubReleaseSchema = z
+  .object({
+    id: z.number(),
+    tag_name: z.string(),
+    name: z.string().nullable(),
+    body: z.string().nullable(),
+    html_url: z.string(),
+    draft: z.boolean(),
+    prerelease: z.boolean(),
+    published_at: z.string().nullable(),
+    created_at: z.string(),
+  })
+  .passthrough();
+
+const githubReleasesSchema = z.array(githubReleaseSchema);
+
+type GithubRelease = z.infer<typeof githubReleaseSchema>;
 
 export async function runOpenaiCodexReleases(): Promise<RunResult> {
   const token = env().GITHUB_TOKEN;
@@ -47,12 +56,23 @@ export async function runOpenaiCodexReleases(): Promise<RunResult> {
     throw new Error(`${REPO} releases returned status ${res.status}`);
   }
 
-  let releases: GithubRelease[];
+  let raw: unknown;
   try {
-    releases = JSON.parse(res.body) as GithubRelease[];
+    raw = JSON.parse(res.body);
   } catch {
     throw new Error(`${REPO} releases returned non-JSON body`);
   }
+
+  const parsed = githubReleasesSchema.safeParse(raw);
+  if (!parsed.success) {
+    // eslint-disable-next-line no-console
+    console.warn(
+      `[${SOURCE_KEY}] ${REPO} releases failed schema validation — skipping:`,
+      parsed.error.issues.slice(0, 3),
+    );
+    return { inserted: 0, updated: 0, skipped: 1, status: "skipped" };
+  }
+  const releases: GithubRelease[] = parsed.data;
 
   const db = tryGetDb();
   if (!db) return { inserted: 0, updated: 0, skipped: 1, status: "skipped" };
@@ -63,18 +83,25 @@ export async function runOpenaiCodexReleases(): Promise<RunResult> {
     return { inserted: 0, updated: 0, skipped: draftSkipped, status: "ok", etag: res.etag, lastModified: res.lastModified };
   }
 
-  const rows = publishable.map((rel) => ({
-    source: SOURCE_KEY,
-    type: rel.prerelease ? "prerelease" : "release",
-    externalId: `${REPO}:${rel.tag_name}`,
-    title: rel.name && rel.name.trim().length > 0 ? rel.name : `${REPO} ${rel.tag_name}`,
-    // Codex release bodies are effectively empty — store only the link, no
-    // synthesized notes (Phase 2.2 user decision).
-    bodyMd: null,
-    url: rel.html_url,
-    publishedAt: rel.published_at ? new Date(rel.published_at) : new Date(rel.created_at),
-    provider: PROVIDER,
-  }));
+  const rows = publishable.map((rel) => {
+    // Guard against a malformed upstream date (fall back to null rather than
+    // writing an Invalid Date — siblings let detectedAt stand in).
+    const rawDate = rel.published_at ?? rel.created_at;
+    const d = new Date(rawDate);
+    const publishedAt = Number.isNaN(d.getTime()) ? null : d;
+    return {
+      source: SOURCE_KEY,
+      type: rel.prerelease ? "prerelease" : "release",
+      externalId: `${REPO}:${rel.tag_name}`,
+      title: rel.name && rel.name.trim().length > 0 ? rel.name : `${REPO} ${rel.tag_name}`,
+      // Codex release bodies are effectively empty — store only the link, no
+      // synthesized notes (Phase 2.2 user decision).
+      bodyMd: null,
+      url: rel.html_url,
+      publishedAt,
+      provider: PROVIDER,
+    };
+  });
 
   const inserted = await db
     .insert(events)

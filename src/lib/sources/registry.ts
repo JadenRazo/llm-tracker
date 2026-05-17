@@ -98,10 +98,14 @@ import { openaiStatusSource } from "@/lib/sources/openai/openai_status";
  */
 export const SOURCE_REGISTRY: readonly SourceDescriptor[] = [
   // ---- Tier 1 (every 10m): cheap, time-sensitive ----
+  // Position is kept in lockstep with each descriptor's declared `tier` so a
+  // maintainer reading this list sees the true cadence (cron derives tiers from
+  // descriptor.tier, not from this ordering — see C1).
   npmClaudeCodeSource,
   anthropicStatusSource,
   openaiCodexNpmSource,
   geminiCliNpmSource,
+  openaiStatusSource,
   // ---- Tier 2 (every 30m): medium-weight ----
   anthropicModelsSource,
   githubReleasesClaudeCodeSource,
@@ -113,18 +117,17 @@ export const SOURCE_REGISTRY: readonly SourceDescriptor[] = [
   claudeCodeReferenceSource,
   openaiCodexReleasesSource,
   openaiCodexReferenceSource,
-  openaiNewsSource,
-  openaiStatusSource,
   geminiCliReleasesSource,
   geminiCliChangelogSource,
   geminiCliReferenceSource,
   geminiNewsSource,
+  geminiStatusSource,
   // ---- Tier 3 (every 2h): HTML scrapes ----
   docsReleaseNotesSource,
   anthropicNewsSource,
   mcpServersSource,
   geminiModelsSource,
-  geminiStatusSource,
+  openaiNewsSource,
 ] as const;
 
 const REGISTRY_BY_KEY: ReadonlyMap<string, SourceDescriptor> = new Map(

@@ -107,6 +107,8 @@ export async function runOpenaiNews(): Promise<RunResult> {
 export const openaiNewsSource: SourceDescriptor = {
   key: SOURCE_KEY,
   provider: PROVIDER,
-  tier: 2,
+  // Tier 3 (2h): RSS news, not time-sensitive — aligned with the
+  // claude/anthropic_news sibling (also tier 3).
+  tier: 3,
   run: runOpenaiNews,
 };

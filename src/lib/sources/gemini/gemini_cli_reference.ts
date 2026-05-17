@@ -27,6 +27,9 @@ const REFERENCE_URL =
 const DOCS_URL =
   "https://github.com/google-gemini/gemini-cli/blob/main/docs/cli/cli-reference.md";
 
+// Calibrated against the Phase 2.2 live run (~40 rows parsed from
+// cli-reference.md). 15 is a deliberately loose floor: anything under it means
+// the markdown structure changed and we'd rather error than half-ingest.
 const MIN_EXPECTED_ROWS = 15;
 const DEPRECATION_STALE_DAYS = 3;
 const SEED_FIRST_SEEN_AT = new Date("2024-01-01T00:00:00.000Z");
@@ -89,6 +92,13 @@ function cleanToken(raw: string): string {
     .trim();
 }
 
+// Failure mode to be aware of: the slash branch keys off a 2-column
+// `| Command | Description |` header. If upstream ever widens that REPL table
+// (adds an Example/Alias column) it stops matching `h.length === 2` and falls
+// through to `return null` — those slash rows silently vanish from coverage
+// rather than misclassifying. Conversely a 2-col table that *isn't* slash
+// commands would be misread as slash. Both are acceptable (degrade, don't
+// corrupt) but a coverage drop here usually means this header shape changed.
 function classify(header: string[]): Kind | null {
   const h = header.map((c) => c.toLowerCase().trim());
   if (h[0] === "option") return "flag";
@@ -174,6 +184,11 @@ export async function runGeminiCliReference(): Promise<RunResult> {
   }
 
   const parsed = parseReference(res.body);
+  // Unconditional throw on a short parse is safe ONLY because this source is a
+  // single page fetched in one request (no pagination): a non-unchanged 200
+  // here means we have the whole document, so a low row count genuinely means
+  // the markup changed. If this ever became multi-page, a short final page
+  // would spuriously trip this — re-scope the guard before paginating.
   if (parsed.length < MIN_EXPECTED_ROWS) {
     throw new Error(
       `${SOURCE_KEY}: parsed only ${parsed.length} rows (< ${MIN_EXPECTED_ROWS}); cli-reference.md markup likely changed`,
@@ -247,7 +262,15 @@ export async function runGeminiCliReference(): Promise<RunResult> {
     }
   }
 
-  // Provider-scoped deprecation sweep — never touches Claude rows.
+  // Deprecation sweep — scoped to this source's PROVIDER, not this SOURCE_KEY;
+  // never touches Claude rows.
+  //
+  // SAFE TODAY ONLY because there is exactly one cli_reference source per
+  // provider (gemini_cli_reference is the sole "gemini" cli_reference writer).
+  // If a second same-provider cli_reference source is ever added, this sweep
+  // would deprecate the *other* source's rows on every run (same provider,
+  // different SOURCE_KEY refreshing lastSeenAt). Before adding one, re-scope
+  // this to be source-aware — provider-scoping alone is not sufficient then.
   const threeDaysAgo = new Date(now.getTime() - DEPRECATION_STALE_DAYS * 24 * 60 * 60 * 1000);
   const newlyDeprecated = await db
     .update(cliReference)

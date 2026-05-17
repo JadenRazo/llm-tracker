@@ -34,6 +34,9 @@ const PROVIDER: Provider = "openai";
 const REFERENCE_URL = "https://developers.openai.com/codex/cli/reference.md";
 const CONFIG_REFERENCE_URL = "https://developers.openai.com/codex/config-reference.md";
 
+// Calibrated against the Phase 2.2 live run (~94 flags parsed from
+// reference.md). 15 is a deliberately loose floor: anything under it means the
+// embedded JS array structure changed and we'd rather error than half-ingest.
 const MIN_EXPECTED_ROWS = 15;
 const DEPRECATION_STALE_DAYS = 3;
 // Sentinel pre-dating Codex CLI's public launch — used on first run only so
@@ -135,6 +138,11 @@ function parseReferenceMd(md: string): ParsedItem[] {
   const seen = new Set<string>();
   const re = /export\s+const\s+(\w+)\s*=\s*\[/g;
   while (re.exec(md)) {
+    // Intentionally do NOT advance re.lastIndex past the extracted block: a
+    // nested `export const ... = [` inside this block (or the regex resuming
+    // mid-block) can re-yield records we already emitted. That's fine — the
+    // `seen` set dedupes by name, so re-scanning is harmless and keeps this
+    // simpler than tracking block end offsets.
     const block = extractArrayBlock(md, re.lastIndex - 1);
     if (!block) continue;
     for (const rec of parseRecords(block)) {
@@ -309,8 +317,16 @@ export async function runOpenaiCodexReference(): Promise<RunResult> {
     }
   }
 
-  // Deprecation sweep — scoped to this source's provider so we never touch
-  // Claude rows. A row of ours not refreshed for 3+ days is presumed gone.
+  // Deprecation sweep — scoped to this source's PROVIDER, not this SOURCE_KEY.
+  // A row of ours not refreshed for 3+ days is presumed gone.
+  //
+  // SAFE TODAY ONLY because there is exactly one cli_reference source per
+  // provider (openai_codex_reference is the sole "openai" cli_reference writer).
+  // If a second same-provider cli_reference source is ever added, this sweep
+  // would deprecate the *other* source's rows on every run (they share the
+  // provider but are refreshed by a different SOURCE_KEY). Before adding one,
+  // re-scope this to be source-aware (e.g. track lastSeenAt per source, or add
+  // a source column predicate) — provider-scoping alone is not sufficient then.
   const threeDaysAgo = new Date(now.getTime() - DEPRECATION_STALE_DAYS * 24 * 60 * 60 * 1000);
   const newlyDeprecated = await db
     .update(cliReference)

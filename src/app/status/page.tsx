@@ -12,6 +12,7 @@ import type { Metadata } from "next";
 import { tryGetDb } from "@/lib/db";
 import { events } from "@/lib/db/schema";
 import type { Event } from "@/lib/db/schema";
+import { sanitizeMdx } from "@/lib/mdx-sanitize";
 import { Container } from "@/components/ui/container";
 import { PageHeader } from "@/components/ui/page-header";
 import { SectionHeading } from "@/components/ui/section-heading";
@@ -129,7 +130,7 @@ export default async function StatusPage() {
                 </p>
                 {current.bodyMd ? (
                   <div className="prose mt-4 border-t border-[var(--color-border)]/40 pt-4">
-                    <MDXRemote source={current.bodyMd} />
+                    <MDXRemote source={sanitizeMdx(current.bodyMd)} />
                   </div>
                 ) : null}
               </Card>

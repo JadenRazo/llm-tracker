@@ -1,3 +1,9 @@
+// Tier 2 (30m, deliberate): this proxies the broad GCP incidents.json feed
+// (all of Google Cloud, not a dedicated Gemini Statuspage). 30m rather than 10m
+// is a deliberate cost/noise tradeoff — the feed is large and most incidents
+// are non-AI and filtered out, so a tighter cadence buys little freshness for
+// the extra fetch/parse cost.
+//
 // Polls status.cloud.google.com/incidents.json and emits one event per
 // AI/Gemini-relevant incident. This is the user-approved provider-level status
 // substitute for Gemini (Google has no dedicated Gemini Statuspage).
@@ -9,6 +15,7 @@
 // via contentHash (each incident's `updates` array changes as it progresses).
 
 import { and, eq, inArray } from "drizzle-orm";
+import { z } from "zod";
 import { tryGetDb } from "@/lib/db";
 import { events } from "@/lib/db/schema";
 import { fetchConditional, sha256Hex } from "@/lib/poller/conditional-fetch";
@@ -20,6 +27,11 @@ const SOURCE_KEY = "gemini_status";
 const PROVIDER: Provider = "gemini";
 const INCIDENTS_URL = "https://status.cloud.google.com/incidents.json";
 const STATUS_PAGE = "https://status.cloud.google.com";
+
+// Cap incidents persisted per run. incidents.json is the full GCP history and
+// can be large; we only ever persist the AI-relevant subset, but bound it so a
+// malformed/hostile feed can't drive an unbounded batch insert.
+const MAX_INCIDENTS = 200;
 
 // Conservative product-name allowlist (substring, case-insensitive). Anchored
 // to the AI surfaces that touch Gemini; deliberately excludes generic infra
@@ -35,27 +47,42 @@ const AI_PRODUCT_PATTERNS = [
   "contact center ai",
 ];
 
-interface GcpUpdate {
-  created?: string;
-  modified?: string;
-  when?: string;
-  text?: string;
-  status?: string;
-}
+// Upstream incidents.json is untrusted. Validate the shape we read before
+// touching the DB; on failure we soft-skip (never throw, never write).
+// .passthrough() keeps the schema tolerant of GCP's many extra fields.
+const gcpUpdateSchema = z
+  .object({
+    created: z.string().optional(),
+    modified: z.string().optional(),
+    when: z.string().optional(),
+    text: z.string().optional(),
+    status: z.string().optional(),
+  })
+  .passthrough();
 
-interface GcpIncident {
-  id: string;
-  number?: string;
-  begin?: string;
-  created?: string;
-  end?: string | null;
-  modified?: string;
-  external_desc?: string;
-  uri?: string;
-  most_recent_update?: GcpUpdate;
-  affected_products?: { title?: string; id?: string }[];
-  updates?: GcpUpdate[];
-}
+const gcpIncidentSchema = z
+  .object({
+    id: z.string(),
+    number: z.string().optional(),
+    begin: z.string().optional(),
+    created: z.string().optional(),
+    end: z.string().nullable().optional(),
+    modified: z.string().optional(),
+    external_desc: z.string().optional(),
+    uri: z.string().optional(),
+    most_recent_update: gcpUpdateSchema.optional(),
+    affected_products: z
+      .array(
+        z.object({ title: z.string().optional(), id: z.string().optional() }).passthrough(),
+      )
+      .optional(),
+    updates: z.array(gcpUpdateSchema).optional(),
+  })
+  .passthrough();
+
+const gcpIncidentsSchema = z.array(gcpIncidentSchema);
+
+type GcpIncident = z.infer<typeof gcpIncidentSchema>;
 
 function isAiRelevant(incident: GcpIncident): boolean {
   const products = incident.affected_products ?? [];
@@ -97,16 +124,29 @@ export async function runGeminiStatus(): Promise<RunResult> {
     return { inserted: 0, updated: 0, skipped: 1, status: "skipped" };
   }
 
-  let all: GcpIncident[];
+  let raw: unknown;
   try {
-    all = JSON.parse(res.body) as GcpIncident[];
+    raw = JSON.parse(res.body);
   } catch {
     // eslint-disable-next-line no-console
     console.warn(`[${SOURCE_KEY}] incidents.json non-JSON body — skipping`);
     return { inserted: 0, updated: 0, skipped: 1, status: "skipped" };
   }
 
-  const relevant = all.filter(isAiRelevant);
+  const validated = gcpIncidentsSchema.safeParse(raw);
+  if (!validated.success) {
+    // eslint-disable-next-line no-console
+    console.warn(
+      `[${SOURCE_KEY}] incidents.json failed schema validation — skipping:`,
+      validated.error.issues.slice(0, 3),
+    );
+    return { inserted: 0, updated: 0, skipped: 1, status: "skipped" };
+  }
+  const all: GcpIncident[] = validated.data;
+
+  // Cap the AI-relevant set before insert so a malformed/hostile feed can't
+  // drive an unbounded batch (see MAX_INCIDENTS).
+  const relevant = all.filter(isAiRelevant).slice(0, MAX_INCIDENTS);
   // eslint-disable-next-line no-console
   console.log(
     `[${SOURCE_KEY}] ${all.length} GCP incidents total, ${relevant.length} AI-relevant kept (${
@@ -136,6 +176,11 @@ export async function runGeminiStatus(): Promise<RunResult> {
     const url = incident.uri ? `${STATUS_PAGE}/${incident.uri.replace(/^\//, "")}` : STATUS_PAGE;
     const existing = prior.get(incident.id);
     if (!existing) {
+      // Guard against a malformed upstream date (siblings fall back to null
+      // and let detectedAt stand in).
+      const rawDate = incident.begin ?? incident.created ?? null;
+      const d = rawDate ? new Date(rawDate) : null;
+      const publishedAt = d && !Number.isNaN(d.getTime()) ? d : null;
       toInsert.push({
         source: SOURCE_KEY,
         type: "incident",
@@ -144,7 +189,7 @@ export async function runGeminiStatus(): Promise<RunResult> {
         bodyMd: body,
         url,
         contentHash: hash,
-        publishedAt: incident.begin ? new Date(incident.begin) : incident.created ? new Date(incident.created) : null,
+        publishedAt,
         provider: PROVIDER,
       });
     } else if (existing.contentHash !== hash) {
@@ -184,6 +229,8 @@ export async function runGeminiStatus(): Promise<RunResult> {
 export const geminiStatusSource: SourceDescriptor = {
   key: SOURCE_KEY,
   provider: PROVIDER,
-  tier: 3,
+  // Tier 2 (30m): broad GCP incidents.json feed — deliberate 30m cadence (see
+  // file header for the cost/noise rationale).
+  tier: 2,
   run: runGeminiStatus,
 };

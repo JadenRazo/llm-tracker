@@ -1,6 +1,7 @@
 // Polls the npm registry for new @google/gemini-cli versions.
 // Emits one event per unseen version. Mirrors claude/npm_claude_code.ts.
 
+import { z } from "zod";
 import { tryGetDb } from "@/lib/db";
 import { events } from "@/lib/db/schema";
 import { fetchConditional } from "@/lib/poller/conditional-fetch";
@@ -13,12 +14,18 @@ const PROVIDER: Provider = "gemini";
 const REGISTRY_URL = "https://registry.npmjs.org/@google/gemini-cli";
 const MAX_VERSIONS = 50;
 
-interface NpmMetadata {
-  name: string;
-  "dist-tags"?: Record<string, string>;
-  time?: Record<string, string>;
-  versions?: Record<string, unknown>;
-}
+// npm registry is untrusted upstream — validate the shape before we read it.
+// .passthrough() so the registry's many extra fields don't reject a valid doc.
+const npmMetadataSchema = z
+  .object({
+    name: z.string(),
+    "dist-tags": z.record(z.string()).optional(),
+    time: z.record(z.string()).optional(),
+    versions: z.record(z.unknown()).optional(),
+  })
+  .passthrough();
+
+type NpmMetadata = z.infer<typeof npmMetadataSchema>;
 
 export async function runGeminiCliNpm(): Promise<RunResult> {
   const res = await fetchConditional(REGISTRY_URL, SOURCE_KEY);
@@ -30,12 +37,23 @@ export async function runGeminiCliNpm(): Promise<RunResult> {
     throw new Error(`npm registry returned status ${res.status}`);
   }
 
-  let data: NpmMetadata;
+  let raw: unknown;
   try {
-    data = JSON.parse(res.body) as NpmMetadata;
+    raw = JSON.parse(res.body);
   } catch {
     throw new Error("npm registry returned non-JSON body");
   }
+
+  const parsed = npmMetadataSchema.safeParse(raw);
+  if (!parsed.success) {
+    // eslint-disable-next-line no-console
+    console.warn(
+      `[${SOURCE_KEY}] npm metadata failed schema validation — skipping:`,
+      parsed.error.issues.slice(0, 3),
+    );
+    return { inserted: 0, updated: 0, skipped: 1, status: "skipped" };
+  }
+  const data: NpmMetadata = parsed.data;
 
   const db = tryGetDb();
   if (!db) {

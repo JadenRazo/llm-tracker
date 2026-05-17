@@ -7,6 +7,7 @@
 // a closed upstream must not error the poller or fabricate data.
 
 import { and, eq, inArray } from "drizzle-orm";
+import { z } from "zod";
 import { tryGetDb } from "@/lib/db";
 import { events } from "@/lib/db/schema";
 import { fetchConditional } from "@/lib/poller/conditional-fetch";
@@ -19,24 +20,48 @@ const PROVIDER: Provider = "openai";
 const SUMMARY_URL = "https://status.openai.com/api/v2/summary.json";
 const STATUS_PAGE = "https://status.openai.com";
 
-interface StatusSummary {
-  page?: { url?: string };
-  status?: { indicator?: string; description?: string };
-  incidents?: StatusIncident[];
-  scheduled_maintenances?: StatusIncident[];
-}
+// Cap incidents persisted per run. Statuspage summary.json normally carries a
+// handful of active/scheduled items; a malformed or hostile upstream returning
+// thousands must not balloon a single batch insert.
+const MAX_INCIDENTS = 200;
 
-interface StatusIncident {
-  id: string;
-  name: string;
-  status: string;
-  impact: string;
-  shortlink?: string;
-  created_at: string;
-  updated_at: string;
-  resolved_at?: string | null;
-  incident_updates?: { body: string; created_at: string; status: string }[];
-}
+// Upstream is untrusted (open Statuspage endpoint). Validate the shape we read
+// before touching the DB; on failure we soft-skip (never throw, never write).
+// .passthrough() so unknown Statuspage fields don't reject a valid payload.
+const statusIncidentSchema = z
+  .object({
+    id: z.string(),
+    name: z.string(),
+    status: z.string(),
+    impact: z.string(),
+    shortlink: z.string().optional(),
+    created_at: z.string(),
+    updated_at: z.string(),
+    resolved_at: z.string().nullable().optional(),
+    incident_updates: z
+      .array(
+        z
+          .object({ body: z.string(), created_at: z.string(), status: z.string() })
+          .passthrough(),
+      )
+      .optional(),
+  })
+  .passthrough();
+
+const statusSummarySchema = z
+  .object({
+    page: z.object({ url: z.string().optional() }).passthrough().optional(),
+    status: z
+      .object({ indicator: z.string().optional(), description: z.string().optional() })
+      .passthrough()
+      .optional(),
+    incidents: z.array(statusIncidentSchema).optional(),
+    scheduled_maintenances: z.array(statusIncidentSchema).optional(),
+  })
+  .passthrough();
+
+type StatusSummary = z.infer<typeof statusSummarySchema>;
+type StatusIncident = z.infer<typeof statusIncidentSchema>;
 
 function renderIncidentBody(incident: StatusIncident): string {
   const updates = incident.incident_updates ?? [];
@@ -60,14 +85,25 @@ export async function runOpenaiStatus(): Promise<RunResult> {
     return { inserted: 0, updated: 0, skipped: 1, status: "skipped" };
   }
 
-  let data: StatusSummary;
+  let raw: unknown;
   try {
-    data = JSON.parse(res.body) as StatusSummary;
+    raw = JSON.parse(res.body);
   } catch {
     // eslint-disable-next-line no-console
     console.warn(`[${SOURCE_KEY}] status.openai.com returned non-JSON body — skipping`);
     return { inserted: 0, updated: 0, skipped: 1, status: "skipped" };
   }
+
+  const parsed = statusSummarySchema.safeParse(raw);
+  if (!parsed.success) {
+    // eslint-disable-next-line no-console
+    console.warn(
+      `[${SOURCE_KEY}] summary.json failed schema validation — skipping:`,
+      parsed.error.issues.slice(0, 3),
+    );
+    return { inserted: 0, updated: 0, skipped: 1, status: "skipped" };
+  }
+  const data: StatusSummary = parsed.data;
 
   const db = tryGetDb();
   if (!db) return { inserted: 0, updated: 0, skipped: 1, status: "skipped" };
@@ -106,10 +142,12 @@ export async function runOpenaiStatus(): Promise<RunResult> {
   }
 
   // ---- incidents (active + scheduled) ----
+  // Bound the per-run set so a malformed/hostile upstream can't drive an
+  // unbounded batch insert (see MAX_INCIDENTS).
   const allIncidents: StatusIncident[] = [
     ...(data.incidents ?? []),
     ...(data.scheduled_maintenances ?? []),
-  ];
+  ].slice(0, MAX_INCIDENTS);
 
   if (allIncidents.length > 0) {
     const ids = allIncidents.map((i) => i.id);
@@ -127,6 +165,10 @@ export async function runOpenaiStatus(): Promise<RunResult> {
       const url = incident.shortlink ?? STATUS_PAGE;
       const existing = prior.get(incident.id);
       if (!existing) {
+        // Guard against a malformed upstream date (siblings fall back to null
+        // and let detectedAt stand in).
+        const createdAt = new Date(incident.created_at);
+        const publishedAt = Number.isNaN(createdAt.getTime()) ? null : createdAt;
         toInsert.push({
           source: SOURCE_KEY,
           type: "incident",
@@ -134,7 +176,7 @@ export async function runOpenaiStatus(): Promise<RunResult> {
           title: incident.name,
           bodyMd: body,
           url,
-          publishedAt: new Date(incident.created_at),
+          publishedAt,
           provider: PROVIDER,
         });
       } else if (existing.bodyMd !== body) {
@@ -169,6 +211,8 @@ export async function runOpenaiStatus(): Promise<RunResult> {
 export const openaiStatusSource: SourceDescriptor = {
   key: SOURCE_KEY,
   provider: PROVIDER,
-  tier: 2,
+  // Tier 1 (10m): cheap Statuspage summary.json, time-sensitive — aligned with
+  // the claude/anthropic_status sibling (also tier 1).
+  tier: 1,
   run: runOpenaiStatus,
 };

@@ -14,9 +14,17 @@
 // status "skipped" so a Google docs redesign degrades gracefully rather than
 // erroring the poller (Anthropic's page is stable enough to throw on; this one
 // is not).
+//
+// models.id namespacing: model ids are the bare upstream slug, NOT
+// provider-namespaced (Phase 2.2 decision — re-namespacing models.id was judged
+// higher risk than the predicate below). To prevent a future cross-provider id
+// collision from reading/overwriting another provider's row, every read and
+// write here is provider-scoped via `eq(models.provider, PROVIDER)` (the
+// existence query and the update `.where(...)`). Keep that invariant if this
+// module's read/write paths change.
 
 import * as cheerio from "cheerio";
-import { eq, inArray } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { tryGetDb } from "@/lib/db";
 import { events, models } from "@/lib/db/schema";
 import { fetchConditional } from "@/lib/poller/conditional-fetch";
@@ -93,7 +101,17 @@ export async function runGeminiModels(): Promise<RunResult> {
 
   const ids = parsed.map((m) => m.id);
   const existingIds = new Set(
-    (await db.select({ id: models.id }).from(models).where(inArray(models.id, ids))).map((r) => r.id),
+    (
+      await db
+        .select({ id: models.id })
+        .from(models)
+        // Provider predicate: models.id is NOT provider-namespaced (Phase 2.2
+        // decision — not re-namespaced this phase). Without this, a future
+        // cross-provider id collision (e.g. another provider also has a model
+        // slug "pro") would let us read/overwrite that provider's row. The
+        // provider predicate is the lower-risk enforcement vs. re-namespacing.
+        .where(and(inArray(models.id, ids), eq(models.provider, PROVIDER)))
+    ).map((r) => r.id),
   );
 
   const now = new Date();
@@ -144,7 +162,9 @@ export async function runGeminiModels(): Promise<RunResult> {
     await db
       .update(models)
       .set({ displayName: m.displayName, lastSeenAt: now })
-      .where(eq(models.id, m.id));
+      // Provider predicate (see existence query above) so we can never update
+      // another provider's model row on a cross-provider id collision.
+      .where(and(eq(models.id, m.id), eq(models.provider, PROVIDER)));
     updated++;
   }
 
