@@ -7,6 +7,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import matter from "gray-matter";
+import { DEFAULT_PROVIDER, providerSchema, type Provider } from "@/lib/providers";
 
 const CONTENT_ROOT = path.join(process.cwd(), "content");
 
@@ -20,6 +21,16 @@ export interface ContentFrontmatter {
   verifiedAgainstCli?: string;
   /** ISO date the content was last verified. */
   verifiedAt?: string;
+  /** Owning LLM provider. Optional in frontmatter — files without it (every
+   *  existing guide/tip) resolve to "claude". */
+  provider: Provider;
+}
+
+/** Coerce a raw frontmatter `provider` value to a known provider, defaulting
+ *  to "claude" so legacy content without the field still parses. */
+function resolveProvider(raw: unknown): Provider {
+  const parsed = providerSchema.safeParse(raw);
+  return parsed.success ? parsed.data : DEFAULT_PROVIDER;
 }
 
 export interface ContentItem {
@@ -61,6 +72,7 @@ function readDir(kind: "tips" | "guides"): ContentItem[] {
         category: fm.category,
         date: fm.date,
         tags: fm.tags,
+        provider: resolveProvider((fm as { provider?: unknown }).provider),
       },
       body: parsed.content,
       readingTime: computeReadingTime(parsed.content),
@@ -114,6 +126,7 @@ function getOne(kind: "tips" | "guides", slug: string): ContentItem | null {
       tags: fm.tags,
       verifiedAgainstCli: fm.verifiedAgainstCli,
       verifiedAt: fm.verifiedAt,
+      provider: resolveProvider((fm as { provider?: unknown }).provider),
     },
     body: parsed.content,
     readingTime: computeReadingTime(parsed.content),

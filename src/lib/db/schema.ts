@@ -52,12 +52,16 @@ export const events = pgTable(
     publishedAt: timestamp("published_at", { withTimezone: true, mode: "date" }),
     /** sha256 of bodyMd (or a canonical subset) — used for dedupe on re-scrape. */
     contentHash: text("content_hash"),
+    /** Owning LLM provider ("claude" | "openai" | "gemini"). Nullable in Phase
+     *  2.0 (additive); a later migration backfills + sets NOT NULL DEFAULT. */
+    provider: text("provider"),
   },
   (t) => ({
     sourceExternalUnique: uniqueIndex("events_source_external_idx").on(t.source, t.externalId),
     detectedIdx: index("events_detected_idx").on(t.detectedAt),
     publishedIdx: index("events_published_idx").on(t.publishedAt),
     sourceIdx: index("events_source_idx").on(t.source),
+    providerIdx: index("events_provider_idx").on(t.provider),
   }),
 );
 
@@ -68,21 +72,30 @@ export type NewEvent = typeof events.$inferInsert;
 // models — current Anthropic catalog
 // ---------------------------------------------------------------------------
 
-export const models = pgTable("models", {
-  /** Model ID as returned by /v1/models, e.g. "claude-opus-4-7". */
-  id: text("id").primaryKey(),
-  displayName: text("display_name").notNull(),
-  contextWindow: integer("context_window"),
-  maxOutput: integer("max_output"),
-  /** USD per million input tokens. */
-  pricingIn: numeric("pricing_in", { precision: 10, scale: 4 }),
-  /** USD per million output tokens. */
-  pricingOut: numeric("pricing_out", { precision: 10, scale: 4 }),
-  /** { toolUse: boolean, vision: boolean, extendedThinking: boolean, ... } */
-  capabilities: jsonb("capabilities").$type<Record<string, boolean>>().default(sql`'{}'::jsonb`),
-  firstSeenAt: nowTz("first_seen_at"),
-  lastSeenAt: nowTz("last_seen_at"),
-});
+export const models = pgTable(
+  "models",
+  {
+    /** Model ID as returned by /v1/models, e.g. "claude-opus-4-7". */
+    id: text("id").primaryKey(),
+    displayName: text("display_name").notNull(),
+    contextWindow: integer("context_window"),
+    maxOutput: integer("max_output"),
+    /** USD per million input tokens. */
+    pricingIn: numeric("pricing_in", { precision: 10, scale: 4 }),
+    /** USD per million output tokens. */
+    pricingOut: numeric("pricing_out", { precision: 10, scale: 4 }),
+    /** { toolUse: boolean, vision: boolean, extendedThinking: boolean, ... } */
+    capabilities: jsonb("capabilities").$type<Record<string, boolean>>().default(sql`'{}'::jsonb`),
+    firstSeenAt: nowTz("first_seen_at"),
+    lastSeenAt: nowTz("last_seen_at"),
+    /** Owning LLM provider ("claude" | "openai" | "gemini"). Nullable in Phase
+     *  2.0 (additive); a later migration backfills + sets NOT NULL DEFAULT. */
+    provider: text("provider"),
+  },
+  (t) => ({
+    providerIdx: index("models_provider_idx").on(t.provider),
+  }),
+);
 
 export type Model = typeof models.$inferSelect;
 export type NewModel = typeof models.$inferInsert;
@@ -113,10 +126,14 @@ export const cliReference = pgTable(
     lastSeenAt: nowTz("last_seen_at"),
     /** Set when we flip a row to deprecated (still rendered, but struck-through). Nullable. */
     deprecatedAt: timestamp("deprecated_at", { withTimezone: true, mode: "date" }),
+    /** Owning LLM provider ("claude" | "openai" | "gemini"). Nullable in Phase
+     *  2.0 (additive); a later migration backfills + sets NOT NULL DEFAULT. */
+    provider: text("provider"),
   },
   (t) => ({
     kindIdx: index("cli_reference_kind_idx").on(t.kind),
     firstSeenIdx: index("cli_reference_first_seen_idx").on(t.firstSeenAt),
+    providerIdx: index("cli_reference_provider_idx").on(t.provider),
   }),
 );
 
