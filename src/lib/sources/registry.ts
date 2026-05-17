@@ -37,7 +37,21 @@ export type SourceKey =
   | "claude_code_reference"
   | "docs_release_notes"
   | "anthropic_news"
-  | "mcp_servers";
+  | "mcp_servers"
+  // ---- Phase 2.2: OpenAI / Codex (provider "openai") ----
+  | "openai_codex_npm"
+  | "openai_codex_releases"
+  | "openai_codex_reference"
+  | "openai_news"
+  | "openai_status"
+  // ---- Phase 2.2: Gemini (provider "gemini") ----
+  | "gemini_cli_npm"
+  | "gemini_cli_releases"
+  | "gemini_cli_changelog"
+  | "gemini_cli_reference"
+  | "gemini_models"
+  | "gemini_news"
+  | "gemini_status";
 
 export interface SourceDescriptor {
   /** Persisted source key — stored verbatim in poller_runs.source / events.source. */
@@ -65,6 +79,18 @@ import {
 } from "@/lib/sources/claude/github_releases";
 import { mcpServersSource } from "@/lib/sources/claude/mcp_servers";
 import { npmClaudeCodeSource } from "@/lib/sources/claude/npm_claude_code";
+import { geminiCliChangelogSource } from "@/lib/sources/gemini/gemini_cli_changelog";
+import { geminiCliNpmSource } from "@/lib/sources/gemini/gemini_cli_npm";
+import { geminiCliReferenceSource } from "@/lib/sources/gemini/gemini_cli_reference";
+import { geminiCliReleasesSource } from "@/lib/sources/gemini/gemini_cli_releases";
+import { geminiModelsSource } from "@/lib/sources/gemini/gemini_models";
+import { geminiNewsSource } from "@/lib/sources/gemini/gemini_news";
+import { geminiStatusSource } from "@/lib/sources/gemini/gemini_status";
+import { openaiCodexNpmSource } from "@/lib/sources/openai/openai_codex_npm";
+import { openaiCodexReferenceSource } from "@/lib/sources/openai/openai_codex_reference";
+import { openaiCodexReleasesSource } from "@/lib/sources/openai/openai_codex_releases";
+import { openaiNewsSource } from "@/lib/sources/openai/openai_news";
+import { openaiStatusSource } from "@/lib/sources/openai/openai_status";
 
 /**
  * The canonical source list. Order within a tier preserves the pre-refactor
@@ -74,6 +100,8 @@ export const SOURCE_REGISTRY: readonly SourceDescriptor[] = [
   // ---- Tier 1 (every 10m): cheap, time-sensitive ----
   npmClaudeCodeSource,
   anthropicStatusSource,
+  openaiCodexNpmSource,
+  geminiCliNpmSource,
   // ---- Tier 2 (every 30m): medium-weight ----
   anthropicModelsSource,
   githubReleasesClaudeCodeSource,
@@ -83,10 +111,20 @@ export const SOURCE_REGISTRY: readonly SourceDescriptor[] = [
   githubReleasesAgentSdkPythonSource,
   claudeCodeChangelogSource,
   claudeCodeReferenceSource,
+  openaiCodexReleasesSource,
+  openaiCodexReferenceSource,
+  openaiNewsSource,
+  openaiStatusSource,
+  geminiCliReleasesSource,
+  geminiCliChangelogSource,
+  geminiCliReferenceSource,
+  geminiNewsSource,
   // ---- Tier 3 (every 2h): HTML scrapes ----
   docsReleaseNotesSource,
   anthropicNewsSource,
   mcpServersSource,
+  geminiModelsSource,
+  geminiStatusSource,
 ] as const;
 
 const REGISTRY_BY_KEY: ReadonlyMap<string, SourceDescriptor> = new Map(
