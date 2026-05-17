@@ -6,6 +6,10 @@ import { events } from "@/lib/db/schema";
 import { env } from "@/lib/env";
 import { fetchConditional } from "@/lib/poller/conditional-fetch";
 import type { RunResult } from "@/lib/poller/runner";
+import type { Provider } from "@/lib/providers";
+import type { SourceDescriptor } from "@/lib/sources/registry";
+
+const PROVIDER: Provider = "claude";
 
 interface GithubRelease {
   id: number;
@@ -62,6 +66,7 @@ function runFactory(repo: string, sourceKey: string) {
       bodyMd: rel.body ?? null,
       url: rel.html_url,
       publishedAt: rel.published_at ? new Date(rel.published_at) : new Date(rel.created_at),
+      provider: PROVIDER,
     }));
 
     const inserted = await db
@@ -81,10 +86,29 @@ function runFactory(repo: string, sourceKey: string) {
   };
 }
 
-// Pre-bound runners — one per tracked repo. Each uses its own sourceKey so that
-// ETags are cached per-repo (they'd thrash if shared).
-export const runGithubReleasesClaudeCode = runFactory("anthropics/claude-code", "github_releases_claude_code");
-export const runGithubReleasesSdkPython = runFactory("anthropics/anthropic-sdk-python", "github_releases_sdk_python");
-export const runGithubReleasesSdkTypescript = runFactory("anthropics/anthropic-sdk-typescript", "github_releases_sdk_typescript");
-export const runGithubReleasesSdkGo = runFactory("anthropics/anthropic-sdk-go", "github_releases_sdk_go");
-export const runGithubReleasesAgentSdkPython = runFactory("anthropics/claude-agent-sdk-python", "github_releases_agent_sdk_python");
+// Pre-bound descriptors — one per tracked repo. Each uses its own sourceKey so
+// that ETags are cached per-repo (they'd thrash if shared). All Tier 2.
+function githubReleasesSource(repo: string, sourceKey: string): SourceDescriptor {
+  return { key: sourceKey, provider: PROVIDER, tier: 2, run: runFactory(repo, sourceKey) };
+}
+
+export const githubReleasesClaudeCodeSource = githubReleasesSource(
+  "anthropics/claude-code",
+  "github_releases_claude_code",
+);
+export const githubReleasesSdkPythonSource = githubReleasesSource(
+  "anthropics/anthropic-sdk-python",
+  "github_releases_sdk_python",
+);
+export const githubReleasesSdkTypescriptSource = githubReleasesSource(
+  "anthropics/anthropic-sdk-typescript",
+  "github_releases_sdk_typescript",
+);
+export const githubReleasesSdkGoSource = githubReleasesSource(
+  "anthropics/anthropic-sdk-go",
+  "github_releases_sdk_go",
+);
+export const githubReleasesAgentSdkPythonSource = githubReleasesSource(
+  "anthropics/claude-agent-sdk-python",
+  "github_releases_agent_sdk_python",
+);

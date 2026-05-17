@@ -17,8 +17,11 @@ import { tryGetDb } from "@/lib/db";
 import { cliReference, events, pollerRuns } from "@/lib/db/schema";
 import { fetchConditional } from "@/lib/poller/conditional-fetch";
 import type { RunResult } from "@/lib/poller/runner";
+import type { Provider } from "@/lib/providers";
+import type { SourceDescriptor } from "@/lib/sources/registry";
 
 const SOURCE_KEY = "claude_code_reference";
+const PROVIDER: Provider = "claude";
 const COMMANDS_URL = "https://code.claude.com/docs/en/commands";
 const CLI_REF_URL = "https://code.claude.com/docs/en/cli-reference";
 const HOOKS_URL = "https://code.claude.com/docs/en/hooks";
@@ -225,6 +228,7 @@ export async function runClaudeCodeReference(): Promise<RunResult> {
         metadata: item.metadata,
         firstSeenAt: firstSeenForNewRows,
         lastSeenAt: now,
+        provider: PROVIDER,
       });
       inserted++;
 
@@ -239,6 +243,7 @@ export async function runClaudeCodeReference(): Promise<RunResult> {
             (item.usage ? `\n\n\`\`\`\n${item.usage}\n\`\`\`` : ""),
           url: item.docsUrl,
           publishedAt: now,
+          provider: PROVIDER,
         });
       }
     } else {
@@ -277,6 +282,7 @@ export async function runClaudeCodeReference(): Promise<RunResult> {
       bodyMd: `\`${row.name}\` is no longer listed in the Claude Code docs.`,
       url: null,
       publishedAt: now,
+      provider: PROVIDER,
     });
   }
 
@@ -287,3 +293,10 @@ export async function runClaudeCodeReference(): Promise<RunResult> {
     status: "ok",
   };
 }
+
+export const claudeCodeReferenceSource: SourceDescriptor = {
+  key: SOURCE_KEY,
+  provider: PROVIDER,
+  tier: 2,
+  run: runClaudeCodeReference,
+};

@@ -6,8 +6,11 @@ import { tryGetDb } from "@/lib/db";
 import { events } from "@/lib/db/schema";
 import { fetchConditional } from "@/lib/poller/conditional-fetch";
 import type { RunResult } from "@/lib/poller/runner";
+import type { Provider } from "@/lib/providers";
+import type { SourceDescriptor } from "@/lib/sources/registry";
 
 const SOURCE_KEY = "npm_claude_code";
+const PROVIDER: Provider = "claude";
 const REGISTRY_URL = "https://registry.npmjs.org/@anthropic-ai/claude-code";
 const MAX_VERSIONS = 50;
 
@@ -60,6 +63,7 @@ export async function runNpmClaudeCode(): Promise<RunResult> {
     bodyMd: null,
     url: `https://www.npmjs.com/package/@anthropic-ai/claude-code/v/${version}`,
     publishedAt: time[version] ? new Date(time[version]!) : null,
+    provider: PROVIDER,
   }));
 
   const inserted = await db
@@ -77,3 +81,10 @@ export async function runNpmClaudeCode(): Promise<RunResult> {
     lastModified: res.lastModified,
   };
 }
+
+export const npmClaudeCodeSource: SourceDescriptor = {
+  key: SOURCE_KEY,
+  provider: PROVIDER,
+  tier: 1,
+  run: runNpmClaudeCode,
+};

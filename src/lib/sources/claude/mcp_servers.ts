@@ -21,8 +21,14 @@ import { tryGetDb } from "@/lib/db";
 import { events, mcpServers } from "@/lib/db/schema";
 import { fetchConditional } from "@/lib/poller/conditional-fetch";
 import type { RunResult } from "@/lib/poller/runner";
+import type { Provider } from "@/lib/providers";
+import type { SourceDescriptor } from "@/lib/sources/registry";
 
 const SOURCE_KEY = "mcp_servers";
+// The curated MCP catalog tracks the Claude/Anthropic-adjacent MCP ecosystem.
+// The provider enum is fixed (claude|openai|gemini) with no "shared" value, so
+// the new_mcp_server events are tagged 'claude' for this phase.
+const PROVIDER: Provider = "claude";
 const AWESOME_URL = "https://raw.githubusercontent.com/punkpeye/awesome-mcp-servers/main/README.md";
 const OVERRIDES_PATH = path.join(process.cwd(), "content", "mcp-overrides.json");
 const MIN_EXPECTED_ROWS = 10;
@@ -294,6 +300,7 @@ export async function runMcpServers(): Promise<RunResult> {
           bodyMd: t.description,
           url: t.repoUrl,
           publishedAt: now,
+          provider: PROVIDER,
         })),
       )
       .onConflictDoNothing({ target: [events.source, events.externalId] });
@@ -331,3 +338,10 @@ export async function runMcpServers(): Promise<RunResult> {
 
   return { inserted, updated, skipped: 0, status: "ok" };
 }
+
+export const mcpServersSource: SourceDescriptor = {
+  key: SOURCE_KEY,
+  provider: PROVIDER,
+  tier: 3,
+  run: runMcpServers,
+};

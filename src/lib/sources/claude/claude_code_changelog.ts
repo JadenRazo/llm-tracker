@@ -6,8 +6,11 @@ import { tryGetDb } from "@/lib/db";
 import { events } from "@/lib/db/schema";
 import { fetchConditional, sha256Hex } from "@/lib/poller/conditional-fetch";
 import type { RunResult } from "@/lib/poller/runner";
+import type { Provider } from "@/lib/providers";
+import type { SourceDescriptor } from "@/lib/sources/registry";
 
 const SOURCE_KEY = "claude_code_changelog";
+const PROVIDER: Provider = "claude";
 const CHANGELOG_URL = "https://raw.githubusercontent.com/anthropics/claude-code/main/CHANGELOG.md";
 
 interface ChangelogSection {
@@ -84,6 +87,7 @@ export async function runClaudeCodeChangelog(): Promise<RunResult> {
         bodyMd: section.body,
         url: `https://github.com/anthropics/claude-code/blob/main/CHANGELOG.md#${section.version.replace(/\./g, "")}`,
         contentHash: hash,
+        provider: PROVIDER,
       });
     } else if (prior.contentHash !== hash) {
       toUpdate.push({ id: prior.id, body: section.body, hash });
@@ -121,3 +125,10 @@ export async function runClaudeCodeChangelog(): Promise<RunResult> {
     lastModified: res.lastModified,
   };
 }
+
+export const claudeCodeChangelogSource: SourceDescriptor = {
+  key: SOURCE_KEY,
+  provider: PROVIDER,
+  tier: 2,
+  run: runClaudeCodeChangelog,
+};

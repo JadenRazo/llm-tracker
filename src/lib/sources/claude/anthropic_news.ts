@@ -6,8 +6,11 @@ import { tryGetDb } from "@/lib/db";
 import { events } from "@/lib/db/schema";
 import { fetchConditional } from "@/lib/poller/conditional-fetch";
 import type { RunResult } from "@/lib/poller/runner";
+import type { Provider } from "@/lib/providers";
+import type { SourceDescriptor } from "@/lib/sources/registry";
 
 const SOURCE_KEY = "anthropic_news";
+const PROVIDER: Provider = "claude";
 const NEWS_URL = "https://www.anthropic.com/news";
 
 function slugFromHref(href: string): string {
@@ -94,6 +97,7 @@ export async function runAnthropicNews(): Promise<RunResult> {
     bodyMd: null,
     url: article.url,
     publishedAt: article.publishedAt,
+    provider: PROVIDER,
   }));
 
   const inserted = await db
@@ -111,3 +115,10 @@ export async function runAnthropicNews(): Promise<RunResult> {
     lastModified: res.lastModified,
   };
 }
+
+export const anthropicNewsSource: SourceDescriptor = {
+  key: SOURCE_KEY,
+  provider: PROVIDER,
+  tier: 3,
+  run: runAnthropicNews,
+};

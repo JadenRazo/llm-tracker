@@ -7,8 +7,11 @@ import { tryGetDb } from "@/lib/db";
 import { events, pollerRuns } from "@/lib/db/schema";
 import { sha256Hex } from "@/lib/poller/conditional-fetch";
 import type { RunResult } from "@/lib/poller/runner";
+import type { Provider } from "@/lib/providers";
+import type { SourceDescriptor } from "@/lib/sources/registry";
 
 const SOURCE_KEY = "docs_release_notes";
+const PROVIDER: Provider = "claude";
 const BODY_MAX = 20_000;
 
 const PAGES: { slug: string; url: string }[] = [
@@ -153,6 +156,7 @@ export async function runDocsReleaseNotes(): Promise<RunResult> {
         url: page.url,
         contentHash: hash,
         publishedAt: new Date(),
+        provider: PROVIDER,
       });
       inserted++;
     } else if (existing[0]!.contentHash !== hash) {
@@ -173,3 +177,10 @@ export async function runDocsReleaseNotes(): Promise<RunResult> {
   const status = pageFailures === PAGES.length ? "skipped" : "ok";
   return { inserted, updated: 0, skipped: skipped + pageFailures, status };
 }
+
+export const docsReleaseNotesSource: SourceDescriptor = {
+  key: SOURCE_KEY,
+  provider: PROVIDER,
+  tier: 3,
+  run: runDocsReleaseNotes,
+};

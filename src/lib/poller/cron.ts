@@ -11,20 +11,15 @@
 // run (matters most for T3, where mcp_servers can take >30s).
 
 import cron from "node-cron";
+import { sourcesForTier } from "@/lib/sources/registry";
 import { runSource, type SourceKey } from "./runner";
 
-const TIER_1: SourceKey[] = ["npm_claude_code", "anthropic_status"];
-const TIER_2: SourceKey[] = [
-  "anthropic_models",
-  "github_releases_claude_code",
-  "github_releases_sdk_python",
-  "github_releases_sdk_typescript",
-  "github_releases_sdk_go",
-  "github_releases_agent_sdk_python",
-  "claude_code_changelog",
-  "claude_code_reference",
-];
-const TIER_3: SourceKey[] = ["docs_release_notes", "anthropic_news", "mcp_servers"];
+// Tiers are derived from the registry — registry order within a tier is
+// preserved, so the fan-out (and boot-kick stagger) is identical to the
+// pre-refactor hardcoded arrays.
+const TIER_1: SourceKey[] = sourcesForTier(1).map((d) => d.key);
+const TIER_2: SourceKey[] = sourcesForTier(2).map((d) => d.key);
+const TIER_3: SourceKey[] = sourcesForTier(3).map((d) => d.key);
 
 const inFlight = new Map<string, Promise<void>>();
 

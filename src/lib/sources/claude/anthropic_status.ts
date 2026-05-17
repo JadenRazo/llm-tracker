@@ -7,8 +7,11 @@ import { tryGetDb } from "@/lib/db";
 import { events } from "@/lib/db/schema";
 import { fetchConditional } from "@/lib/poller/conditional-fetch";
 import type { RunResult } from "@/lib/poller/runner";
+import type { Provider } from "@/lib/providers";
+import type { SourceDescriptor } from "@/lib/sources/registry";
 
 const SOURCE_KEY = "anthropic_status";
+const PROVIDER: Provider = "claude";
 const SUMMARY_URL = "https://status.claude.com/api/v2/summary.json";
 
 interface StatusSummary {
@@ -81,6 +84,7 @@ export async function runAnthropicStatus(): Promise<RunResult> {
       title: currentTitle,
       bodyMd: currentBody,
       url: "https://status.claude.com",
+      provider: PROVIDER,
     });
     inserted++;
   } else if (existingCurrent[0]!.title !== currentTitle || existingCurrent[0]!.bodyMd !== currentBody) {
@@ -121,6 +125,7 @@ export async function runAnthropicStatus(): Promise<RunResult> {
           bodyMd: body,
           url,
           publishedAt: new Date(incident.created_at),
+          provider: PROVIDER,
         });
       } else if (existing.bodyMd !== body) {
         toUpdate.push({ id: existing.id, body });
@@ -150,3 +155,10 @@ export async function runAnthropicStatus(): Promise<RunResult> {
     lastModified: res.lastModified,
   };
 }
+
+export const anthropicStatusSource: SourceDescriptor = {
+  key: SOURCE_KEY,
+  provider: PROVIDER,
+  tier: 1,
+  run: runAnthropicStatus,
+};

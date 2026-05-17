@@ -1,39 +1,19 @@
-// Source dispatcher: given a SourceKey, run the matching module and record the
-// outcome in poller_runs.
+// Source dispatcher: given a SourceKey, run the matching registry descriptor
+// and record the outcome in poller_runs.
+//
+// The source set is the provider-keyed registry in src/lib/sources/registry.ts.
+// `SourceKey` is derived from that registry — adding a source there extends the
+// union automatically. `RunResult` lives here (every source imports the type
+// from this module); the registry imports the run functions, never this file's
+// runtime, so there is no import cycle (the source modules' `RunResult` import
+// is type-only and erased at compile time).
 
 import { tryGetDb } from "@/lib/db";
 import { pollerRuns } from "@/lib/db/schema";
+import { getSourceDescriptor, SOURCE_REGISTRY } from "@/lib/sources/registry";
 
-import { runAnthropicModels } from "@/lib/sources/anthropic_models";
-import { runAnthropicNews } from "@/lib/sources/anthropic_news";
-import { runAnthropicStatus } from "@/lib/sources/anthropic_status";
-import { runClaudeCodeChangelog } from "@/lib/sources/claude_code_changelog";
-import { runClaudeCodeReference } from "@/lib/sources/claude_code_reference";
-import { runDocsReleaseNotes } from "@/lib/sources/docs_release_notes";
-import {
-  runGithubReleasesAgentSdkPython,
-  runGithubReleasesClaudeCode,
-  runGithubReleasesSdkGo,
-  runGithubReleasesSdkPython,
-  runGithubReleasesSdkTypescript,
-} from "@/lib/sources/github_releases";
-import { runMcpServers } from "@/lib/sources/mcp_servers";
-import { runNpmClaudeCode } from "@/lib/sources/npm_claude_code";
-
-export type SourceKey =
-  | "npm_claude_code"
-  | "anthropic_status"
-  | "anthropic_models"
-  | "anthropic_news"
-  | "claude_code_changelog"
-  | "claude_code_reference"
-  | "docs_release_notes"
-  | "github_releases_claude_code"
-  | "github_releases_sdk_python"
-  | "github_releases_sdk_typescript"
-  | "github_releases_sdk_go"
-  | "github_releases_agent_sdk_python"
-  | "mcp_servers";
+/** Every persisted source key, derived from the registry. */
+export type SourceKey = (typeof SOURCE_REGISTRY)[number]["key"];
 
 export interface RunResult {
   inserted: number;
@@ -46,26 +26,8 @@ export interface RunResult {
   lastSeenHash?: string;
 }
 
-type SourceFn = () => Promise<RunResult>;
-
-const SOURCES: Record<SourceKey, SourceFn> = {
-  npm_claude_code: runNpmClaudeCode,
-  anthropic_status: runAnthropicStatus,
-  anthropic_models: runAnthropicModels,
-  anthropic_news: runAnthropicNews,
-  claude_code_changelog: runClaudeCodeChangelog,
-  claude_code_reference: runClaudeCodeReference,
-  docs_release_notes: runDocsReleaseNotes,
-  github_releases_claude_code: runGithubReleasesClaudeCode,
-  github_releases_sdk_python: runGithubReleasesSdkPython,
-  github_releases_sdk_typescript: runGithubReleasesSdkTypescript,
-  github_releases_sdk_go: runGithubReleasesSdkGo,
-  github_releases_agent_sdk_python: runGithubReleasesAgentSdkPython,
-  mcp_servers: runMcpServers,
-};
-
 export function isSourceKey(key: string): key is SourceKey {
-  return key in SOURCES;
+  return getSourceDescriptor(key) !== undefined;
 }
 
 /**
@@ -77,8 +39,9 @@ export async function runSource(key: SourceKey): Promise<RunResult & { error?: s
   const db = tryGetDb();
 
   try {
-    const fn = SOURCES[key];
-    const result = await fn();
+    const descriptor = getSourceDescriptor(key);
+    if (!descriptor) throw new Error(`unknown source: ${key}`);
+    const result = await descriptor.run();
     const finishedAt = new Date();
 
     if (db) {

@@ -20,8 +20,11 @@ import { tryGetDb } from "@/lib/db";
 import { events, models } from "@/lib/db/schema";
 import { fetchConditional } from "@/lib/poller/conditional-fetch";
 import type { RunResult } from "@/lib/poller/runner";
+import type { Provider } from "@/lib/providers";
+import type { SourceDescriptor } from "@/lib/sources/registry";
 
 const SOURCE_KEY = "anthropic_models";
+const PROVIDER: Provider = "claude";
 const MODELS_URL = "https://platform.claude.com/docs/en/about-claude/models/overview";
 
 interface ParsedModel {
@@ -161,6 +164,7 @@ export async function runAnthropicModels(): Promise<RunResult> {
         capabilities: m.capabilities,
         firstSeenAt: now,
         lastSeenAt: now,
+        provider: PROVIDER,
       })),
     );
     inserted = newModels.length;
@@ -178,6 +182,7 @@ export async function runAnthropicModels(): Promise<RunResult> {
           bodyMd: `Model ID: \`${m.id}\`\n\nListed on the Anthropic models overview as of ${now.toISOString().slice(0, 10)}.`,
           url: `${MODELS_URL}#${m.id}`,
           publishedAt: now,
+          provider: PROVIDER,
         })),
       )
       .onConflictDoNothing({ target: [events.source, events.externalId] });
@@ -203,3 +208,10 @@ export async function runAnthropicModels(): Promise<RunResult> {
 
   return { inserted, updated, skipped: 0, status: "ok", etag: res.etag, lastModified: res.lastModified };
 }
+
+export const anthropicModelsSource: SourceDescriptor = {
+  key: SOURCE_KEY,
+  provider: PROVIDER,
+  tier: 2,
+  run: runAnthropicModels,
+};
