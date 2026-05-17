@@ -186,15 +186,12 @@ export function DocPopover({
       ? createPortal(
           <div
             className="fixed inset-0 z-50 flex items-end justify-center"
-            // Backdrop tap closes; taps inside the sheet are stopped below.
+            // No dimming scrim — the page stays visible behind the sheet.
+            // Tapping the (transparent) area outside the sheet still closes it.
             onPointerDown={(e) => {
               if (e.target === e.currentTarget) setOpen(false);
             }}
           >
-            <div
-              aria-hidden
-              className="absolute inset-0 bg-[rgb(0_0_0_/_0.55)] opacity-100 transition-opacity duration-150 motion-reduce:duration-0"
-            />
             <div
               {...sheetProps}
               aria-describedby={`${sheetProps.id}-body`}
