@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowUpRight } from "lucide-react";
+import { ArrowUpRight, X } from "lucide-react";
 import { createPortal } from "react-dom";
 import { clsx } from "clsx";
 import type { ReactNode } from "react";
@@ -160,13 +160,21 @@ export function DocPopover({
           <div
             {...panelProps}
             className={clsx(
-              "fixed z-50 w-[min(22rem,calc(100vw-16px))] max-h-[min(24rem,calc(100dvh-32px))] overflow-y-auto rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-raised)] p-3.5 shadow-[var(--shadow-pop)] transition-[opacity,transform] duration-150 ease-[var(--ease-pop)] motion-reduce:duration-0",
+              "fixed z-50 w-[min(22rem,calc(100vw-16px))] max-h-[min(24rem,calc(100dvh-32px))] overflow-y-auto rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-raised)] p-3.5 pr-9 shadow-[var(--shadow-pop)] transition-[opacity,transform] duration-150 ease-[var(--ease-pop)] motion-reduce:duration-0",
               position
                 ? "scale-100 opacity-100"
                 : "scale-[0.96] opacity-0",
             )}
             style={{ ...panelProps.style, position: "fixed" }}
           >
+            <button
+              type="button"
+              onClick={() => setOpen(false)}
+              aria-label="Close"
+              className="absolute right-2 top-2 inline-flex size-6 items-center justify-center rounded-md text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-surface)] hover:text-[var(--color-text-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-ring)]"
+            >
+              <X className="size-4" aria-hidden />
+            </button>
             <PopoverBody item={item} fresh={fresh} />
           </div>,
           document.body,
@@ -196,6 +204,14 @@ export function DocPopover({
                 aria-hidden
                 className="mx-auto mb-3 h-1 w-9 rounded-full bg-[var(--color-border)]"
               />
+              <button
+                type="button"
+                onClick={() => setOpen(false)}
+                aria-label="Close"
+                className="absolute right-3 top-3 inline-flex size-8 items-center justify-center rounded-md text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-surface)] hover:text-[var(--color-text-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-ring)]"
+              >
+                <X className="size-4" aria-hidden />
+              </button>
               <div id={`${sheetProps.id}-body`}>
                 <PopoverBody item={item} fresh={fresh} />
               </div>
@@ -210,7 +226,7 @@ export function DocPopover({
       <button
         {...triggerProps}
         className={clsx(
-          "cursor-help rounded-sm border-b border-dashed border-[var(--color-ring)]/50 bg-[var(--color-surface-raised)] px-1 py-0.5 font-mono text-[0.95em] transition-colors hover:border-[var(--color-ring)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-ring)]",
+          "cursor-pointer rounded-sm border-b border-dashed border-[var(--color-ring)]/50 bg-[var(--color-surface-raised)] px-1 py-0.5 font-mono text-[0.95em] transition-colors hover:border-[var(--color-ring)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-ring)]",
           deprecated
             ? "text-[var(--color-text-muted)] line-through decoration-[var(--color-text-muted)]/60"
             : "text-[var(--color-highlight)]",
@@ -225,7 +241,7 @@ export function DocPopover({
       <button
         {...triggerProps}
         className={clsx(
-          "inline-flex max-w-[min(16rem,calc(100vw-32px))] cursor-help items-center gap-2 truncate rounded-md border border-[var(--color-border)] bg-[var(--color-surface-raised)] px-2 py-1 font-mono text-ui-sm transition-colors hover:border-[var(--color-ring)]/50 focus-visible:border-[var(--color-src-gh-cc)] focus-visible:text-[var(--color-src-gh-cc)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-ring)]",
+          "inline-flex max-w-[min(16rem,calc(100vw-32px))] cursor-pointer items-center gap-2 truncate rounded-md border border-[var(--color-border)] bg-[var(--color-surface-raised)] px-2 py-1 font-mono text-ui-sm transition-colors hover:border-[var(--color-ring)]/50 focus-visible:border-[var(--color-src-gh-cc)] focus-visible:text-[var(--color-src-gh-cc)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-ring)]",
           deprecated
             ? "text-[var(--color-text-muted)] line-through decoration-[var(--color-text-muted)]/60"
             : "text-[var(--color-text-primary)]",

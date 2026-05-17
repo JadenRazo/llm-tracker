@@ -315,27 +315,17 @@ export function useDocOverlay(): DocOverlay {
     };
   }, [open, isSheet, setOpen]);
 
-  // On mobile the chip is tap-to-open only — suppress hover/focus opening so
-  // the sheet does not fire from keyboard tabbing or a stray mouse on a
-  // touch+mouse device. Click still toggles.
+  // Click-to-open on every viewport. Hover/focus no longer open and
+  // pointer-leave/blur no longer close — a content-rich popover that vanishes
+  // when the cursor leaves is bad UX (you can't reach the links inside it).
+  // Open is the trigger click (keyboard Enter/Space fires it too); close is
+  // the panel's explicit X button, plus ESC / click-outside from the base.
   const wrappedTrigger: TriggerProps = {
     ...triggerProps,
-    onPointerEnter: (e) => {
-      if (isSheet) return;
-      triggerProps.onPointerEnter(e);
-    },
-    onPointerLeave: (e) => {
-      if (isSheet) return;
-      triggerProps.onPointerLeave(e);
-    },
-    onFocus: (e) => {
-      if (isSheet) return;
-      triggerProps.onFocus(e);
-    },
-    onBlur: (e) => {
-      if (isSheet) return;
-      triggerProps.onBlur(e);
-    },
+    onPointerEnter: () => {},
+    onPointerLeave: () => {},
+    onFocus: () => {},
+    onBlur: () => {},
     "aria-describedby": !isSheet && open ? base.panelProps.id : undefined,
     "aria-expanded": open,
   };
