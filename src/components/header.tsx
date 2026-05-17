@@ -130,6 +130,16 @@ export function Header() {
     setOpen(false);
   }, [pathname]);
 
+  // Close the mobile panel on Escape key.
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [open]);
+
   // Lock body scroll while the mobile panel is open.
   useEffect(() => {
     if (!open) return;

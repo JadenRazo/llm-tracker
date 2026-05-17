@@ -5,7 +5,7 @@ import Link from "next/link";
 import type { Metadata } from "next";
 import { ArrowLeft } from "lucide-react";
 import { getTip, listTips } from "@/lib/content";
-import { getCurrentClaudeCodeVersion } from "@/lib/current-cli";
+import { getCurrentCliVersion } from "@/lib/current-cli";
 import { computeStaleness } from "@/lib/staleness";
 import { ArticleHeader } from "@/components/ui/article-header";
 import { Container } from "@/components/ui/container";
@@ -34,9 +34,11 @@ export function generateStaticParams() {
 export async function generateMetadata({
   params,
 }: PageProps): Promise<Metadata> {
-  const { slug } = await params;
+  const { provider: raw, slug } = await params;
+  const provider = parseProviderParam(raw);
   const tip = getTip(slug);
-  if (!tip) return { title: "Not found" };
+  if (!tip || !provider || tip.frontmatter.provider !== provider)
+    return { title: "Not found" };
   return {
     title: tip.frontmatter.title,
     description: tip.frontmatter.summary,
@@ -52,7 +54,7 @@ export default async function TipPage({ params }: PageProps) {
   // 404 if the tip doesn't exist *or* belongs to a different provider.
   if (!tip || tip.frontmatter.provider !== provider) notFound();
 
-  const currentCli = await getCurrentClaudeCodeVersion();
+  const currentCli = await getCurrentCliVersion(provider);
   const staleness = computeStaleness(tip.frontmatter, currentCli);
 
   return (

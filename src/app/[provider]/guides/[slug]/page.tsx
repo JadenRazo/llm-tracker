@@ -5,7 +5,7 @@ import Link from "next/link";
 import type { Metadata } from "next";
 import { ArrowLeft } from "lucide-react";
 import { getGuide, listGuides } from "@/lib/content";
-import { getCurrentClaudeCodeVersion } from "@/lib/current-cli";
+import { getCurrentCliVersion } from "@/lib/current-cli";
 import { computeStaleness } from "@/lib/staleness";
 import { ArticleHeader } from "@/components/ui/article-header";
 import { Container } from "@/components/ui/container";
@@ -35,9 +35,11 @@ export function generateStaticParams() {
 export async function generateMetadata({
   params,
 }: PageProps): Promise<Metadata> {
-  const { slug } = await params;
+  const { provider: raw, slug } = await params;
+  const provider = parseProviderParam(raw);
   const guide = getGuide(slug);
-  if (!guide) return { title: "Not found" };
+  if (!guide || !provider || guide.frontmatter.provider !== provider)
+    return { title: "Not found" };
   return {
     title: guide.frontmatter.title,
     description: guide.frontmatter.summary,
@@ -54,7 +56,7 @@ export default async function GuidePage({ params }: PageProps) {
   // keeps each provider's content namespace clean.
   if (!guide || guide.frontmatter.provider !== provider) notFound();
 
-  const currentCli = await getCurrentClaudeCodeVersion();
+  const currentCli = await getCurrentCliVersion(provider);
   const staleness = computeStaleness(guide.frontmatter, currentCli);
 
   return (
