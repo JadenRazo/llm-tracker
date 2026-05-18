@@ -142,7 +142,10 @@
 .src-gh-ts     { --tint: var(--color-src-gh-ts); }
 .src-gh-go     { --tint: var(--color-src-gh-go); }
 .src-gh-agent  { --tint: var(--color-src-gh-agent); }
-.src-default   { --tint: var(--color-border); }
+/* Was --color-border (#3d2a1e, near-black): legible as a faint bg/border but
+   invisible as the icon-chip glyph (1.07:1, WCAG 1.4.11). The muted token is
+   neutral yet visible for the "no specific source" tint. */
+.src-default   { --tint: var(--color-text-muted); }
 
 /* ─────────────────────────────────────────────────────────────
    Keyframes (global)
