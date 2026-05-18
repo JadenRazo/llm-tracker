@@ -48,7 +48,10 @@ export function Badge({
         className={clsx(
           base,
           tintClass,
-          "border bg-[color-mix(in_oklab,var(--tint)_14%,transparent)] text-[var(--tint)] border-[color-mix(in_oklab,var(--tint)_30%,transparent)]",
+          // Text is the tint lightened toward cream so every source tint
+          // (incl. the near-black src-default border tint) stays legible on
+          // the dark surfaces; the raw tint stays on the icon/border/bg accent.
+          "border bg-[color-mix(in_oklab,var(--tint)_14%,transparent)] text-[color-mix(in_oklab,var(--tint)_45%,var(--color-cream))] border-[color-mix(in_oklab,var(--tint)_30%,transparent)]",
           className,
         )}
       >
@@ -74,7 +77,10 @@ export function Badge({
         )}
         style={{
           backgroundColor: `color-mix(in oklab, ${toneVar} 14%, transparent)`,
-          color: toneVar,
+          // Lighten the label toward cream for legibility (the green/gold
+          // tones fail 4.5:1 as raw text on surface-raised); the solid dot
+          // below keeps the full tone as the status signal.
+          color: `color-mix(in oklab, ${toneVar} 45%, var(--color-cream))`,
           borderColor: `color-mix(in oklab, ${toneVar} 30%, transparent)`,
         }}
       >

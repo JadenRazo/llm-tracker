@@ -40,7 +40,9 @@ export function CategoryBadge({ category, className }: CategoryBadgeProps) {
       className={clsx(
         "inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-meta",
         "bg-[color-mix(in_oklab,var(--tint)_14%,transparent)]",
-        "text-[var(--tint)]",
+        // Tint lightened toward cream for legible category text on dark cards
+        // (matches Badge source/status); raw tint stays on bg + border.
+        "text-[color-mix(in_oklab,var(--tint)_45%,var(--color-cream))]",
         "border-[color-mix(in_oklab,var(--tint)_30%,transparent)]",
         className,
       )}

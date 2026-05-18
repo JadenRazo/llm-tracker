@@ -57,7 +57,7 @@ interface HeaderCellProps {
 function HeaderCell({ children, sortable = false, align = "left", className }: HeaderCellProps) {
   return (
     <th
-      className={`px-4 py-3 text-meta text-[var(--color-text-muted)] ${
+      className={`px-4 py-3 text-meta text-[var(--color-text-secondary)] ${
         align === "right" ? "text-right" : "text-left"
       } ${className ?? ""}`}
     >
