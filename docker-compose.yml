@@ -20,7 +20,13 @@ services:
     networks:
       - shared
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:3000/"]
+      # Hit /api/health, not /. Probing / triggered full RSC SSR streaming,
+      # and wget --spider closes the connection mid-stream → Next.js 15
+      # throws "controller[kState].transformAlgorithm is not a function"
+      # every 30s into the logs. /api/health is a lightweight JSON route
+      # that doesn't stream. (Dockerfile already targets this endpoint;
+      # this just aligns the compose override.)
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:3000/api/health"]
       interval: 30s
       timeout: 5s
       retries: 3
