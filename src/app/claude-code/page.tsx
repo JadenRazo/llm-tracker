@@ -20,9 +20,12 @@ import { PageHeader } from "@/components/ui/page-header";
 import { RelativeTime } from "@/components/ui/relative-time";
 
 export const metadata: Metadata = { title: "Claude Code" };
-// DB-backed: the Docker build runs without DATABASE_URL, so ISR would ship an
-// empty page. Force dynamic rendering to always query fresh.
-export const dynamic = "force-dynamic";
+// ISR — Claude Code sources are polled every 30 minutes, so a 5-minute
+// revalidate window keeps the release ladder current while letting the CDN
+// serve cached HTML (MDX compilation is also expensive per-request). Builds
+// without DATABASE_URL prerender an empty fallback via tryGetDb(); the first
+// runtime revalidation fills it in.
+export const revalidate = 300;
 
 async function loadReleases(): Promise<Event[]> {
   const db = tryGetDb();

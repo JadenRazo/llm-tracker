@@ -13,6 +13,8 @@ import { env } from "@/lib/env";
 import { isSourceKey, runSource } from "@/lib/poller/runner";
 
 export const runtime = "nodejs";
+// Intentionally NOT cached: POST-only admin trigger with side effects —
+// caching would be meaningless (POSTs are never served from cache anyway).
 export const dynamic = "force-dynamic";
 
 function isLoopback(req: NextRequest): boolean {

@@ -19,9 +19,11 @@ import { EventCard } from "@/components/event-card";
 import { getSource } from "@/components/sources";
 
 export const metadata: Metadata = { title: "Changelog" };
-// DB-backed: force dynamic so the page always has live content (the Docker
-// build runs without DATABASE_URL and would otherwise ship an empty cache).
-export const dynamic = "force-dynamic";
+// ISR — the fastest poller runs every 5 minutes, so a 5-minute revalidate
+// window never lags ingest by more than one cycle and lets the CDN serve
+// cached HTML. Builds without DATABASE_URL prerender an empty fallback via
+// tryGetDb(); the first runtime revalidation fills it in.
+export const revalidate = 300;
 
 async function loadAll(): Promise<Event[]> {
   const db = tryGetDb();

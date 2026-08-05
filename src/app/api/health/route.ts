@@ -6,6 +6,8 @@ import { tryGetDb } from "@/lib/db";
 import { pollerRuns } from "@/lib/db/schema";
 
 export const runtime = "nodejs";
+// Intentionally NOT cached: this is a liveness probe — monitors need the
+// current db/lastPollAt state, and a stale cached "ok" would mask outages.
 export const dynamic = "force-dynamic";
 
 export async function GET(): Promise<NextResponse> {
