@@ -87,7 +87,7 @@ async function recordPageRun(slug: string, hash: string, status: string): Promis
 async function fetchPage(page: { slug: string; url: string }): Promise<{ slug: string; html: string | null; status: number }> {
   try {
     const res = await fetch(page.url, {
-      headers: { "User-Agent": "claude-tracker/0.1 (+https://claude.raizhost.com)" },
+      headers: { "User-Agent": "claude-tracker/0.1 (+https://llm.raizhost.com)" },
       signal: AbortSignal.timeout(30_000),
     });
     if (!res.ok) {

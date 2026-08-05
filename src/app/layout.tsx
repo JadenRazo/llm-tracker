@@ -34,12 +34,12 @@ export const metadata: Metadata = {
   },
   description:
     "A public read-only dashboard tracking the Claude ecosystem: new models, Claude Code CLI releases, SDKs, docs, status, and curated tips.",
-  metadataBase: new URL("https://claude.raizhost.com"),
+  metadataBase: new URL("https://llm.raizhost.com"),
   openGraph: {
     title: "claude-tracker",
     description:
       "One-stop shop for staying current with the Claude ecosystem — models, CLI, SDKs, docs, status, tips.",
-    url: "https://claude.raizhost.com",
+    url: "https://llm.raizhost.com",
     siteName: "claude-tracker",
     type: "website",
   },
