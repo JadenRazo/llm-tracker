@@ -21,9 +21,11 @@ import { RelativeTime } from "@/components/ui/relative-time";
 import { EventCard } from "@/components/event-card";
 
 export const metadata: Metadata = { title: "Status" };
-// DB-backed: force dynamic so the page always has live content (the Docker
-// build runs without DATABASE_URL and would otherwise ship an empty cache).
-export const dynamic = "force-dynamic";
+// ISR — status is the freshest page on the site, but the upstream poller only
+// runs every 10 minutes, so a 60s revalidate window is effectively live while
+// still letting the CDN absorb traffic. Builds without DATABASE_URL prerender
+// an empty fallback via tryGetDb(); runtime revalidation fills it in.
+export const revalidate = 60;
 
 type StatusTone = "operational" | "degraded" | "outage" | "neutral";
 

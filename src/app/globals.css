@@ -1,10 +1,12 @@
-/* ─────────────────────────────────────────────────────────────
-   Google Fonts — Inter (UI) + JetBrains Mono (code/labels) +
-                  Playfair Display (display headings)
-   @import must come before all other rules per CSS spec.
-   ───────────────────────────────────────────────────────────── */
-@import url("https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Playfair+Display:ital,wght@0,400;0,600;0,700&display=swap");
 @import "tailwindcss";
+
+/* ─────────────────────────────────────────────────────────────
+   Fonts — Inter (UI) + JetBrains Mono (code/labels) +
+           Playfair Display (display headings)
+   Self-hosted via next/font/google in src/app/layout.tsx, which
+   sets the --font-inter / --font-jetbrains-mono / --font-playfair
+   variables on <html>. No third-party font requests.
+   ───────────────────────────────────────────────────────────── */
 
 /* ─────────────────────────────────────────────────────────────
    claude-tracker design tokens — dark-first earth & forest
@@ -13,9 +15,9 @@
    ───────────────────────────────────────────────────────────── */
 @theme {
   /* Typography */
-  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
-  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
-  --font-display: "Playfair Display", ui-serif, Georgia, serif;
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-jetbrains-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
+  --font-display: var(--font-playfair), ui-serif, Georgia, serif;
 
   /* Earth tones — backgrounds */
   --color-cream:       #faf6f0;

@@ -8,8 +8,9 @@ services:
     ports:
       - "127.0.0.1:3200:3000"
     environment:
-      # Connect directly to shared-postgres over the shared_network (no host-loopback hop)
-      - DATABASE_URL=postgresql://portfolio_admin:portfol10Adm1nP%40ssw0rd@shared-postgres:5432/claude_tracker
+      # Connect directly to shared-postgres over the shared_network (no host-loopback hop).
+      # Set in .env — never commit credentials to the compose file.
+      - DATABASE_URL=${DATABASE_URL:?set DATABASE_URL in .env}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
       - GITHUB_TOKEN=${GITHUB_TOKEN:-}
       - ADMIN_TOKEN=${ADMIN_TOKEN}

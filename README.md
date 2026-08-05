@@ -1,6 +1,6 @@
 # claude-tracker
 
-Public, read-only Claude ecosystem dashboard served at `claude.raizhost.com`.
+Public, read-only Claude ecosystem dashboard served at `llm.raizhost.com`.
 
 Polls a tiered set of data sources (npm, GitHub, Anthropic API, docs, status page) on a
 schedule and renders an aggregated feed, a model catalog, the Claude Code version
