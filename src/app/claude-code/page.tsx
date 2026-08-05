@@ -27,6 +27,16 @@ export const metadata: Metadata = { title: "Claude Code" };
 // runtime revalidation fills it in.
 export const revalidate = 300;
 
+/** How many version groups the ladder renders. Claude Code ships several
+ * releases a week, so 50 versions is roughly the last two months — older
+ * releases are one click away on npm/GitHub. Bounding this also bounds the
+ * MDX compilation work per render (one compile per event per version). */
+const MAX_VERSIONS = 50;
+
+/** Each version can appear in at most all three sources, so this row cap is
+ * guaranteed to cover MAX_VERSIONS groups. */
+const MAX_ROWS = MAX_VERSIONS * 3;
+
 async function loadReleases(): Promise<Event[]> {
   const db = tryGetDb();
   if (!db) return [];
@@ -41,7 +51,8 @@ async function loadReleases(): Promise<Event[]> {
           "github_releases_claude_code",
         ]),
       )
-      .orderBy(desc(events.publishedAt));
+      .orderBy(desc(events.publishedAt))
+      .limit(MAX_ROWS);
   } catch {
     return [];
   }
@@ -222,7 +233,9 @@ function sanitizeMdx(body: string): string {
 
 export default async function ClaudeCodePage() {
   const rows = await loadReleases();
-  const groups = groupByVersion(rows);
+  // Only the groups that render get their MDX compiled — <ReleaseBody> below
+  // is per-event, so slicing here caps the compile work too.
+  const groups = groupByVersion(rows).slice(0, MAX_VERSIONS);
 
   return (
     <Container>

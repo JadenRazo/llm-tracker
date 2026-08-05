@@ -88,7 +88,7 @@ function bestWhen(ev: Event): Date {
   return ev.detectedAt;
 }
 
-export function parseNewsRow(ev: Event): ParsedNews {
+export function parseNewsRow(ev: Pick<Event, "title" | "bodyMd">): ParsedNews {
   const raw = ev.title;
 
   // Case A: "ProductApr 17, 2026Introducing Claude Design by Anthropic LabsToday, …"

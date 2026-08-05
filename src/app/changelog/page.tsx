@@ -4,18 +4,17 @@
 // can see at a glance which sources are active this window. Below: week blocks
 // (Monday-starting) rendered most-recent-first as a 2-column small-card grid.
 
-import { desc } from "drizzle-orm";
+import { desc, sql } from "drizzle-orm";
 import { Package } from "lucide-react";
 import type { Metadata } from "next";
 import { tryGetDb } from "@/lib/db";
 import { events } from "@/lib/db/schema";
-import type { Event } from "@/lib/db/schema";
 import { Container } from "@/components/ui/container";
 import { PageHeader } from "@/components/ui/page-header";
 import { SectionHeading } from "@/components/ui/section-heading";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
-import { EventCard } from "@/components/event-card";
+import { EventCard, type EventCardData } from "@/components/event-card";
 import { getSource } from "@/components/sources";
 
 export const metadata: Metadata = { title: "Changelog" };
@@ -25,11 +24,36 @@ export const metadata: Metadata = { title: "Changelog" };
 // tryGetDb(); the first runtime revalidation fills it in.
 export const revalidate = 300;
 
-async function loadAll(): Promise<Event[]> {
+/** Rows shown on the page. 100 events covers several weeks of ingest; the
+ * page renders every row it fetches, so this is also the page length. */
+const MAX_EVENTS = 100;
+
+/** Raw characters of bodyMd fetched per row. The card preview shows at most
+ * 280 characters after markdown stripping; 2000 raw characters is a generous
+ * cushion for stripped-out fences/links, while avoiding shipping multi-KB
+ * release bodies the list never displays. */
+const PREVIEW_CHARS = 2000;
+
+async function loadAll(): Promise<EventCardData[]> {
   const db = tryGetDb();
   if (!db) return [];
   try {
-    return await db.select().from(events).orderBy(desc(events.publishedAt)).limit(200);
+    // Project only the columns the list cards read — full rows include
+    // complete markdown bodies that the changelog list never renders.
+    return await db
+      .select({
+        id: events.id,
+        source: events.source,
+        type: events.type,
+        title: events.title,
+        url: events.url,
+        bodyMd: sql<string | null>`left(${events.bodyMd}, ${PREVIEW_CHARS})`,
+        publishedAt: events.publishedAt,
+        detectedAt: events.detectedAt,
+      })
+      .from(events)
+      .orderBy(desc(events.publishedAt))
+      .limit(MAX_EVENTS);
   } catch {
     return [];
   }
@@ -59,8 +83,10 @@ function startOfIsoWeek(date: Date): Date {
 /**
  * Groups events by their Monday-starting ISO week, sorted most-recent-first.
  */
-function groupByWeek(rows: Event[]): Array<{ weekStart: Date; events: Event[] }> {
-  const buckets = new Map<number, { weekStart: Date; events: Event[] }>();
+function groupByWeek(
+  rows: EventCardData[],
+): Array<{ weekStart: Date; events: EventCardData[] }> {
+  const buckets = new Map<number, { weekStart: Date; events: EventCardData[] }>();
   for (const row of rows) {
     const when = row.publishedAt ?? row.detectedAt;
     const start = startOfIsoWeek(when);
@@ -98,7 +124,7 @@ function formatRange(weekStart: Date, currentYear: number): string {
  * Counts events per source, preserving insertion order so the chip row
  * reflects the order sources first appear in the feed (most recent first).
  */
-function countBySource(rows: Event[]): Array<{ source: string; count: number }> {
+function countBySource(rows: EventCardData[]): Array<{ source: string; count: number }> {
   const counts = new Map<string, number>();
   for (const row of rows) {
     counts.set(row.source, (counts.get(row.source) ?? 0) + 1);
