@@ -35,6 +35,12 @@ COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 COPY --from=builder --chown=nextjs:nodejs /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/content ./content
 
+# AWS Lambda Web Adapter — turns this HTTP server into a Lambda-compatible image.
+# The extension only activates inside the Lambda runtime environment; it is a
+# no-op under docker-compose / plain `docker run`, so local usage is unaffected.
+COPY --from=public.ecr.aws/awsguru/aws-lambda-adapter:0.9.1 /lambda-adapter /opt/extensions/lambda-adapter
+ENV AWS_LWA_PORT=3000 AWS_LWA_READINESS_CHECK_PATH=/api/health
+
 USER nextjs
 
 EXPOSE 3000
