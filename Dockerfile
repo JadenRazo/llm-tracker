@@ -31,6 +31,10 @@ RUN addgroup --system --gid 1001 nodejs && \
 
 # Copy standalone build output + static assets + markdown content
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
+# The memory cache handler resolves to /app/cache-handler.cjs at build time
+# (next.config.ts require.resolve); copy explicitly rather than trusting the
+# standalone file trace to have picked it up.
+COPY --from=builder --chown=nextjs:nodejs /app/cache-handler.cjs ./cache-handler.cjs
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 COPY --from=builder --chown=nextjs:nodejs /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/content ./content
