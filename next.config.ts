@@ -3,6 +3,14 @@ import path from "path";
 
 const nextConfig: NextConfig = {
   output: "standalone",
+  // ISR entries live in memory, not on disk: the Lambda image filesystem is
+  // read-only, so the default FileSystemCache failed every revalidation with
+  // EROFS and pages were frozen at the build-time (empty-DB) prerender.
+  // See cache-handler.cjs for the full story.
+  cacheHandler: require.resolve("./cache-handler.cjs"),
+  // Disable Next's built-in in-memory cache so the handler above is the one
+  // source of truth (avoids double-caching with divergent lifetimes).
+  cacheMaxMemorySize: 0,
   // Pin workspace root to avoid Next.js picking up sibling lockfiles.
   outputFileTracingRoot: path.join(__dirname, "./"),
   // Packages that must stay external (not bundled) in server builds.
