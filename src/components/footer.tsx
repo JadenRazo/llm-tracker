@@ -6,6 +6,9 @@ export function Footer() {
     >
       <div className="mx-auto flex max-w-6xl flex-col gap-4 px-4 text-xs text-[var(--color-text-muted)] sm:px-5">
         <div className="flex flex-wrap items-center gap-4 text-meta">
+          {/* /api/health is a route handler, not a page — next/link does
+              not apply; the rule is a false positive here. */}
+          {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
           <a
             href="/api/health"
             className="text-[var(--color-text-secondary)] hover:text-[var(--color-highlight)]"
@@ -32,8 +35,8 @@ export function Footer() {
             </a>
           </p>
           <p>
-            Not affiliated with Anthropic. Data sourced from public APIs, npm, GitHub, and
-            Anthropic&apos;s docs.
+            Not affiliated with Anthropic, OpenAI, or Google. Data sourced from
+            each provider&apos;s public docs, status pages, npm, and GitHub.
           </p>
         </div>
       </div>

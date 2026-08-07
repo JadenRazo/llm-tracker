@@ -4,6 +4,10 @@ import "./globals.css";
 import { Header } from "@/components/header";
 import { Footer } from "@/components/footer";
 
+// Canonical site origin. Env-overridable (e.g. preview deploys) with a safe
+// production default — non-secret, so no boot validation needed.
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? "https://llm.raizhost.com";
+
 // Self-hosted via next/font — fonts are downloaded at build time and served
 // from /_next/static (immutable, same-origin), replacing the render-blocking
 // Google Fonts CSS @import that added a third-party round-trip per page view.
@@ -29,18 +33,18 @@ const playfair = Playfair_Display({
 
 export const metadata: Metadata = {
   title: {
-    default: "claude-tracker",
-    template: "%s · claude-tracker",
+    default: "LLM Tracker — what's shipping across Claude, OpenAI & Gemini",
+    template: "%s — LLM Tracker",
   },
   description:
-    "A public read-only dashboard tracking the Claude ecosystem: new models, Claude Code CLI releases, SDKs, docs, status, and curated tips.",
-  metadataBase: new URL("https://llm.raizhost.com"),
+    "A self-updating reference tracking what ships across Claude, OpenAI, and Gemini — CLI releases, models, docs, and status. Claude Code and Codex are the coding headliners; everything re-verifies itself as releases land.",
+  metadataBase: new URL(SITE_URL),
   openGraph: {
-    title: "claude-tracker",
+    title: "LLM Tracker — what's shipping across Claude, OpenAI & Gemini",
     description:
-      "One-stop shop for staying current with the Claude ecosystem — models, CLI, SDKs, docs, status, tips.",
-    url: "https://llm.raizhost.com",
-    siteName: "claude-tracker",
+      "Track Claude, OpenAI, and Gemini in one place — releases, CLIs, models, docs, and status, version-pinned and re-verified as they ship.",
+    url: SITE_URL,
+    siteName: "LLM Tracker",
     type: "website",
   },
 };

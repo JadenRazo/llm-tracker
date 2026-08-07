@@ -59,6 +59,54 @@ async function loadCacheHeaders(sourceKey: string): Promise<{ etag?: string; las
   }
 }
 
+// Hard cap on a response body. Upstream feeds are JSON/markdown/RSS in the
+// low-KB-to-low-MB range; anything past this is a misconfigured or hostile
+// upstream and must not be buffered into memory unbounded.
+const MAX_BODY_BYTES = 10 * 1024 * 1024; // 10 MB
+
+/**
+ * Reads the response body with a hard byte cap. Streams the body and aborts
+ * once the cap is exceeded rather than buffering the whole thing first.
+ * Returns null if the cap is exceeded (caller treats as a soft skip — same
+ * shape as a non-ok response: no body), otherwise the decoded text.
+ */
+async function readCapped(res: Response, sourceKey: string): Promise<string | null> {
+  if (!res.body) {
+    // No stream (e.g. some runtimes on empty bodies) — fall back to text();
+    // bounded by the Content-Length pre-check the caller already did.
+    return res.text();
+  }
+  const reader = res.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (!value) continue;
+      total += value.byteLength;
+      if (total > MAX_BODY_BYTES) {
+        await reader.cancel();
+        // eslint-disable-next-line no-console
+        console.warn(
+          `[${sourceKey}] response body exceeded ${MAX_BODY_BYTES} bytes — aborting read (soft skip)`,
+        );
+        return null;
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  const merged = new Uint8Array(total);
+  let offset = 0;
+  for (const c of chunks) {
+    merged.set(c, offset);
+    offset += c.byteLength;
+  }
+  return new TextDecoder().decode(merged);
+}
+
 function jitterDelay(attempt: number): number {
   // 250ms * 2^attempt with 30% jitter.
   const base = 250 * 2 ** attempt;
@@ -75,7 +123,7 @@ export async function fetchConditional(
   const timeoutMs = options.timeoutMs ?? 30_000;
 
   const headers: Record<string, string> = {
-    "User-Agent": "claude-tracker/0.1 (+https://llm.raizhost.com)",
+    "User-Agent": "llm-tracker/0.1 (+https://llm.raizhost.com)",
     ...(options.headers ?? {}),
   };
   if (etag) headers["If-None-Match"] = etag;
@@ -108,7 +156,30 @@ export async function fetchConditional(
         return result;
       }
 
-      const body = res.ok ? await res.text() : undefined;
+      // Reject early on an over-cap Content-Length so we never start buffering
+      // a huge body. Mirror the "no body" shape callers already soft-skip on
+      // (status preserved, body undefined) rather than throwing out of the
+      // poller — an oversized upstream is a skip, not a hard error.
+      const contentLength = Number(res.headers.get("content-length"));
+      if (Number.isFinite(contentLength) && contentLength > MAX_BODY_BYTES) {
+        // eslint-disable-next-line no-console
+        console.warn(
+          `[${sourceKey}] Content-Length ${contentLength} exceeds ${MAX_BODY_BYTES} bytes — skipping (no body read)`,
+        );
+        return {
+          status: res.status,
+          body: undefined,
+          etag: res.headers.get("etag") ?? undefined,
+          lastModified: res.headers.get("last-modified") ?? undefined,
+          unchanged: false,
+        };
+      }
+
+      // Defensive cap on the actual read (handles chunked / missing
+      // Content-Length). readCapped returns null past the cap → treat as a
+      // soft skip by leaving body undefined.
+      const text = res.ok ? await readCapped(res, sourceKey) : null;
+      const body = text ?? undefined;
       const result: ConditionalFetchResult = {
         status: res.status,
         body,
@@ -116,7 +187,7 @@ export async function fetchConditional(
         lastModified: res.headers.get("last-modified") ?? undefined,
         unchanged: false,
       };
-      if (res.ok) {
+      if (res.ok && body !== undefined) {
         headerCache.set(sourceKey, { etag: result.etag, lastModified: result.lastModified });
       }
       return result;

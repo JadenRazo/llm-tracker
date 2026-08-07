@@ -1,9 +1,9 @@
 import {
+  Boxes,
   Brain,
   ChevronsUpDown,
   Eye,
   FileText,
-  Sparkles,
   Wrench,
   type LucideIcon,
 } from "lucide-react";
@@ -57,7 +57,7 @@ interface HeaderCellProps {
 function HeaderCell({ children, sortable = false, align = "left", className }: HeaderCellProps) {
   return (
     <th
-      className={`px-4 py-3 text-meta text-[var(--color-text-muted)] ${
+      className={`px-4 py-3 text-meta text-[var(--color-text-secondary)] ${
         align === "right" ? "text-right" : "text-left"
       } ${className ?? ""}`}
     >
@@ -79,7 +79,7 @@ export function ModelTable({ models }: { models: Model[] }) {
   if (models.length === 0) {
     return (
       <EmptyState
-        icon={Sparkles}
+        icon={Boxes}
         title="Catalog warming up"
         description="The models poller runs every 30 minutes."
         hint="First population typically completes within 30 minutes of deploy."

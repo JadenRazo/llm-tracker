@@ -57,8 +57,15 @@ const ANCHOR_GAP = 8;
  * Drives a portal-rendered popover anchored to a trigger button. The panel is
  * clamped inside the visual viewport on every scroll/resize/zoom so it cannot
  * escape its bounds on small screens, mobile keyboard insets, or pinch-zoom.
+ *
+ * @param extraPanelRef - Optional additional ref whose subtree should be
+ *   excluded from the click-outside dismissal check. Used by useDocOverlay to
+ *   exclude the bottom-sheet panel so the window pointerdown listener does not
+ *   close the sheet when the user taps inside it.
  */
-export function useAnchoredPopover(): AnchoredPopover {
+export function useAnchoredPopover(
+  extraPanelRef?: RefObject<HTMLElement | null>,
+): AnchoredPopover {
   const tipId = useId();
   const anchorRef = useRef<HTMLButtonElement | null>(null);
   const tipRef = useRef<HTMLDivElement | null>(null);
@@ -139,6 +146,7 @@ export function useAnchoredPopover(): AnchoredPopover {
       if (!target) return;
       if (anchorRef.current?.contains(target)) return;
       if (tipRef.current?.contains(target)) return;
+      if (extraPanelRef?.current?.contains(target)) return;
       setOpen(false);
     };
 
@@ -157,7 +165,7 @@ export function useAnchoredPopover(): AnchoredPopover {
       vv?.removeEventListener("resize", onResize);
       vv?.removeEventListener("scroll", onScroll);
     };
-  }, [open, compute]);
+  }, [open, compute, extraPanelRef]);
 
   const triggerProps: TriggerProps = {
     ref: anchorRef,
@@ -181,7 +189,11 @@ export function useAnchoredPopover(): AnchoredPopover {
       suppressFocusOpenRef.current = false;
       setOpen(false);
     },
-    onClick: () => {
+    onClick: (e) => {
+      // Stop bubbling so the trigger does not also fire an ancestor <a> link
+      // when the DocPopover button is rendered inside linked content (e.g. MDX
+      // fallback anchor wrapping a resolved code token).
+      e.stopPropagation();
       suppressFocusOpenRef.current = false;
       setOpen((o) => !o);
     },
@@ -243,10 +255,12 @@ export interface DocOverlay {
  * verbatim rather than reimplemented.
  */
 export function useDocOverlay(): DocOverlay {
-  const base = useAnchoredPopover();
-  const { open, setOpen, mounted, triggerProps } = base;
   const sheetId = useId();
   const sheetRef = useRef<HTMLDivElement | null>(null);
+  // Pass sheetRef as the extra-exclusion ref so the base's window pointerdown
+  // listener does not call setOpen(false) when the user taps inside the sheet.
+  const base = useAnchoredPopover(sheetRef);
+  const { open, setOpen, mounted, triggerProps } = base;
   const lastFocusedRef = useRef<HTMLElement | null>(null);
   const [isSheet, setIsSheet] = useState(false);
 
@@ -261,20 +275,23 @@ export function useDocOverlay(): DocOverlay {
     return () => mql.removeEventListener("change", apply);
   }, []);
 
-  // Sheet-only: body scroll lock, ESC close, focus trap, restore focus.
+  // Sheet-only: ESC close, focus trap, restore focus. We deliberately do NOT
+  // lock or pin body/document scroll. The sheet's full-screen fixed wrapper
+  // already blocks interaction with the background, and pinning the body
+  // (position:fixed) is unreliable on layouts whose scroll root is <html>
+  // (Next.js default) — it visually snapped the page to the top behind the
+  // sheet and overshot on restore. Not touching scroll at all means the
+  // position is inherently preserved (the document never scrolls). Every
+  // focus() uses preventScroll so moving focus never scrolls the document.
   useEffect(() => {
     if (!open || !isSheet) return;
 
     lastFocusedRef.current =
       document.activeElement instanceof HTMLElement ? document.activeElement : null;
 
-    const body = document.body;
-    const prevOverflow = body.style.overflow;
-    body.style.overflow = "hidden";
-
     const sheet = sheetRef.current;
     // Move focus into the sheet so the trap has a starting point.
-    sheet?.focus();
+    sheet?.focus({ preventScroll: true });
 
     const focusable = () =>
       Array.from(
@@ -300,42 +317,31 @@ export function useDocOverlay(): DocOverlay {
       const active = document.activeElement;
       if (e.shiftKey && (active === first || active === sheet)) {
         e.preventDefault();
-        last.focus();
+        last.focus({ preventScroll: true });
       } else if (!e.shiftKey && active === last) {
         e.preventDefault();
-        first.focus();
+        first.focus({ preventScroll: true });
       }
     };
 
     document.addEventListener("keydown", onKey, true);
     return () => {
       document.removeEventListener("keydown", onKey, true);
-      body.style.overflow = prevOverflow;
-      lastFocusedRef.current?.focus?.();
+      lastFocusedRef.current?.focus?.({ preventScroll: true });
     };
   }, [open, isSheet, setOpen]);
 
-  // On mobile the chip is tap-to-open only — suppress hover/focus opening so
-  // the sheet does not fire from keyboard tabbing or a stray mouse on a
-  // touch+mouse device. Click still toggles.
+  // Click-to-open on every viewport. Hover/focus no longer open and
+  // pointer-leave/blur no longer close — a content-rich popover that vanishes
+  // when the cursor leaves is bad UX (you can't reach the links inside it).
+  // Open is the trigger click (keyboard Enter/Space fires it too); close is
+  // the panel's explicit X button, plus ESC / click-outside from the base.
   const wrappedTrigger: TriggerProps = {
     ...triggerProps,
-    onPointerEnter: (e) => {
-      if (isSheet) return;
-      triggerProps.onPointerEnter(e);
-    },
-    onPointerLeave: (e) => {
-      if (isSheet) return;
-      triggerProps.onPointerLeave(e);
-    },
-    onFocus: (e) => {
-      if (isSheet) return;
-      triggerProps.onFocus(e);
-    },
-    onBlur: (e) => {
-      if (isSheet) return;
-      triggerProps.onBlur(e);
-    },
+    onPointerEnter: () => {},
+    onPointerLeave: () => {},
+    onFocus: () => {},
+    onBlur: () => {},
     "aria-describedby": !isSheet && open ? base.panelProps.id : undefined,
     "aria-expanded": open,
   };

@@ -9,7 +9,7 @@
    ───────────────────────────────────────────────────────────── */
 
 /* ─────────────────────────────────────────────────────────────
-   claude-tracker design tokens — dark-first earth & forest
+   LLM Tracker design tokens — dark-first earth & forest
    Adapted from raizhost-app for a dark background optimised for
    developer readability.
    ───────────────────────────────────────────────────────────── */
@@ -67,7 +67,7 @@
   --color-border:           #3d2a1e;
   --color-text-primary:     var(--color-cream);
   --color-text-secondary:   #d8c9b8;
-  --color-text-muted:       #a08e7d;
+  --color-text-muted:       #c2a98c;
   --color-primary:          var(--color-leaf);
   --color-primary-hover:    var(--color-fern);
   --color-primary-fg:       var(--color-soil);
@@ -144,7 +144,10 @@
 .src-gh-ts     { --tint: var(--color-src-gh-ts); }
 .src-gh-go     { --tint: var(--color-src-gh-go); }
 .src-gh-agent  { --tint: var(--color-src-gh-agent); }
-.src-default   { --tint: var(--color-border); }
+/* Was --color-border (#3d2a1e, near-black): legible as a faint bg/border but
+   invisible as the icon-chip glyph (1.07:1, WCAG 1.4.11). The muted token is
+   neutral yet visible for the "no specific source" tint. */
+.src-default   { --tint: var(--color-text-muted); }
 
 /* ─────────────────────────────────────────────────────────────
    Keyframes (global)
@@ -221,7 +224,7 @@
 }
 
 @utility animate-in {
-  animation: fade-in-up 0.4s ease-out both;
+  animation: fade-in-up 0.22s var(--ease-pop) both;
 }
 
 /* Subtle stagger for the first few entry-animated sections on a page.
@@ -244,6 +247,15 @@ main > * > .animate-in:nth-child(4) { animation-delay: 120ms; }
   );
   background-size: 200% 100%;
   animation: shimmer 1.8s linear infinite;
+}
+
+/* Honor reduced-motion: drop entry/loop animation, keep final state. */
+@media (prefers-reduced-motion: reduce) {
+  .animate-in,
+  .animate-pulse-dot,
+  .animate-shimmer {
+    animation: none !important;
+  }
 }
 
 /* ─────────────────────────────────────────────────────────────

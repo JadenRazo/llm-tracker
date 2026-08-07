@@ -12,6 +12,29 @@ const nextConfig: NextConfig = {
   experimental: {
     optimizePackageImports: ["lucide-react"],
   },
+  // Phase 2.3: legacy Claude-only routes → their `/claude/...` equivalents.
+  // Permanent (301) so search engines and bookmarks follow the rebrand. The
+  // `/claude-code` ladder became `/claude/releases`.
+  async redirects() {
+    return [
+      { source: "/claude-code", destination: "/claude/releases", permanent: true },
+      { source: "/changelog", destination: "/claude/changelog", permanent: true },
+      { source: "/models", destination: "/claude/models", permanent: true },
+      { source: "/status", destination: "/claude/status", permanent: true },
+      { source: "/guides", destination: "/claude/guides", permanent: true },
+      {
+        source: "/guides/:slug",
+        destination: "/claude/guides/:slug",
+        permanent: true,
+      },
+      { source: "/tips", destination: "/claude/tips", permanent: true },
+      {
+        source: "/tips/:slug",
+        destination: "/claude/tips/:slug",
+        permanent: true,
+      },
+    ];
+  },
   async headers() {
     return [
       {
