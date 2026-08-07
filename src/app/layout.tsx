@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import { Inter, JetBrains_Mono, Playfair_Display } from "next/font/google";
 import "./globals.css";
 import { Header } from "@/components/header";
 import { Footer } from "@/components/footer";
@@ -6,6 +7,29 @@ import { Footer } from "@/components/footer";
 // Canonical site origin. Env-overridable (e.g. preview deploys) with a safe
 // production default — non-secret, so no boot validation needed.
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? "https://llm.raizhost.com";
+
+// Self-hosted via next/font — fonts are downloaded at build time and served
+// from /_next/static (immutable, same-origin), replacing the render-blocking
+// Google Fonts CSS @import that added a third-party round-trip per page view.
+// All three are variable fonts, so each ships as a single file.
+const inter = Inter({
+  subsets: ["latin"],
+  variable: "--font-inter",
+  display: "swap",
+});
+const jetbrainsMono = JetBrains_Mono({
+  subsets: ["latin"],
+  variable: "--font-jetbrains-mono",
+  display: "swap",
+});
+// Display headings only ever render at weight 600 (see the text-display-*
+// utilities and the h1–h6 base rule in globals.css); italics are never used.
+const playfair = Playfair_Display({
+  subsets: ["latin"],
+  weight: "600",
+  variable: "--font-playfair",
+  display: "swap",
+});
 
 export const metadata: Metadata = {
   title: {
@@ -38,7 +62,11 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html
+      lang="en"
+      suppressHydrationWarning
+      className={`${inter.variable} ${jetbrainsMono.variable} ${playfair.variable}`}
+    >
       <body className="flex min-h-dvh flex-col">
         <Header />
         <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-6 sm:px-5 sm:py-8">

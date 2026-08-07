@@ -10,8 +10,18 @@ import { parseNewsRow } from "@/lib/whats-new";
 
 type EventCardSize = "sm" | "md" | "lg";
 
+/**
+ * The subset of an `events` row the card actually reads. Callers that render
+ * many cards (e.g. /changelog) can select just these columns instead of
+ * shipping full rows; a full `Event` satisfies this structurally.
+ */
+export type EventCardData = Pick<
+  Event,
+  "id" | "source" | "type" | "title" | "url" | "bodyMd" | "publishedAt" | "detectedAt"
+>;
+
 interface EventCardProps {
-  event: Event;
+  event: EventCardData;
   size?: EventCardSize;
   className?: string;
 }

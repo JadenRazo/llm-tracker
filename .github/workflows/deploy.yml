@@ -1,0 +1,135 @@
+name: Deploy
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  ECR_IMAGE: 919651863281.dkr.ecr.us-east-1.amazonaws.com/raizcloud/claude-tracker-web
+  FUNCTION_NAME: raizcloud-claude-tracker-web
+  ASSETS_BUCKET: raizcloud-claude-tracker-assets-919651863281
+  SITE_URL: https://llm.raizhost.com
+
+jobs:
+  deploy:
+    name: Build arm64 image, sync assets, update Lambda
+    # Native arm64 runner: the Lambda is arm64, and QEMU-emulating a
+    # Next.js build on amd64 blew past the 20-minute timeout (run 31037562884).
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 20
+    # Run only when CI on main succeeded, or on manual dispatch.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.head_branch == 'main')
+    steps:
+      - name: Resolve deploy SHA
+        id: sha
+        run: |
+          SHA="${{ github.event.workflow_run.head_sha || github.sha }}"
+          echo "sha=${SHA}" >> "$GITHUB_OUTPUT"
+          echo "Deploying commit ${SHA}"
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.sha.outputs.sha }}
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v5
+        with:
+          role-to-assume: arn:aws:iam::919651863281:role/raizcloud-claude-tracker-deploy
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Log in to Amazon ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      # Runners are amd64; the Lambda is arm64.
+      - uses: docker/setup-buildx-action@v3
+
+      # Lambda requires Docker v2 manifests: no provenance/SBOM attestation
+      # manifests and no OCI media types, hence the explicit output flags.
+      - name: Build and push arm64 image (Docker v2 manifest)
+        env:
+          SHA: ${{ steps.sha.outputs.sha }}
+        run: |
+          docker buildx build \
+            --platform linux/arm64 \
+            --provenance=false \
+            --sbom=false \
+            --output "type=image,\"name=${ECR_IMAGE}:${SHA},${ECR_IMAGE}:production-arm64\",oci-mediatypes=false,push=true" \
+            .
+
+      - name: Extract .next/static from pushed image
+        env:
+          SHA: ${{ steps.sha.outputs.sha }}
+        run: |
+          docker pull --platform linux/arm64 "${ECR_IMAGE}:${SHA}"
+          docker create --platform linux/arm64 --name static-extract "${ECR_IMAGE}:${SHA}"
+          docker cp static-extract:/app/.next/static ./extracted-static
+          docker rm static-extract
+
+      # Assets must land in S3 BEFORE the Lambda starts serving HTML that
+      # references the new hashed bundles. No --delete: old bundles keep
+      # serving in-flight pages during the rollover.
+      - name: Sync static assets to S3
+        run: |
+          aws s3 sync ./extracted-static "s3://${ASSETS_BUCKET}/_next/static" \
+            --cache-control "public, max-age=31536000, immutable"
+
+      - name: Update Lambda function code
+        env:
+          SHA: ${{ steps.sha.outputs.sha }}
+        run: |
+          aws lambda update-function-code \
+            --function-name "${FUNCTION_NAME}" \
+            --image-uri "${ECR_IMAGE}:${SHA}" \
+            --architectures arm64 \
+            --no-cli-pager
+
+      - name: Wait for Lambda update to succeed
+        run: |
+          for i in $(seq 1 60); do
+            STATUS=$(aws lambda get-function-configuration \
+              --function-name "${FUNCTION_NAME}" \
+              --query LastUpdateStatus --output text)
+            echo "LastUpdateStatus: ${STATUS} (attempt ${i})"
+            case "${STATUS}" in
+              Successful) exit 0 ;;
+              Failed)
+                aws lambda get-function-configuration \
+                  --function-name "${FUNCTION_NAME}" \
+                  --query '{Status:LastUpdateStatus,Reason:LastUpdateStatusReason,Code:LastUpdateStatusReasonCode}' \
+                  --output json
+                echo "::error::Lambda update failed"
+                exit 1 ;;
+              *) sleep 5 ;;
+            esac
+          done
+          echo "::error::Timed out waiting for Lambda update to complete"
+          exit 1
+
+      # Deploy gate: the site must answer 200 twice (cold start + warm hit).
+      - name: Smoke test production
+        run: |
+          for i in 1 2; do
+            CODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 30 "${SITE_URL}")
+            echo "Request ${i}: HTTP ${CODE}"
+            if [ "${CODE}" != "200" ]; then
+              echo "::error::Smoke test failed — ${SITE_URL} returned HTTP ${CODE} on request ${i}"
+              exit 1
+            fi
+          done
+          echo "Deploy verified: ${SITE_URL} healthy."

@@ -35,9 +35,11 @@ export async function generateMetadata({
   return { title: p ? `${getProviderMeta(p).label} models` : "Not found" };
 }
 
-// DB-backed: force dynamic so the page always has live content (the Docker
-// build runs without DATABASE_URL and would otherwise ship an empty cache).
-export const dynamic = "force-dynamic";
+// ISR — the model catalog changes a handful of times per year, so a 30-minute
+// revalidate window is generous and lets the CDN serve cached HTML. Builds
+// without DATABASE_URL prerender an empty fallback via tryGetDb(); the first
+// runtime revalidation fills it in.
+export const revalidate = 1800;
 
 async function loadModels(provider: Provider): Promise<Model[]> {
   const db = tryGetDb();

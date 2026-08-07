@@ -41,9 +41,22 @@ export async function generateMetadata({
   return { title: p ? `${getProviderMeta(p).toolName} releases` : "Not found" };
 }
 
-// DB-backed: the Docker build runs without DATABASE_URL, so ISR would ship an
-// empty page. Force dynamic rendering to always query fresh.
-export const dynamic = "force-dynamic";
+// ISR — release sources are polled every 30 minutes, so a 5-minute
+// revalidate window keeps the release ladder current while letting the CDN
+// serve cached HTML (MDX compilation is also expensive per-request). Builds
+// without DATABASE_URL prerender an empty fallback via tryGetDb(); the first
+// runtime revalidation fills it in.
+export const revalidate = 300;
+
+/** How many version groups the ladder renders. Claude Code ships several
+ * releases a week, so 50 versions is roughly the last two months — older
+ * releases are one click away on npm/GitHub. Bounding this also bounds the
+ * MDX compilation work per render (one compile per event per version). */
+const MAX_VERSIONS = 50;
+
+/** Each version can appear in at most all of a provider's release sources,
+ * so this row cap is guaranteed to cover MAX_VERSIONS groups. */
+const MAX_ROWS = MAX_VERSIONS * 3;
 
 async function loadReleases(provider: Provider): Promise<Event[]> {
   const db = tryGetDb();
@@ -56,7 +69,8 @@ async function loadReleases(provider: Provider): Promise<Event[]> {
       .where(
         sql`${events.provider} = ${provider} and ${inArray(events.source, [...sources])}`,
       )
-      .orderBy(desc(events.publishedAt));
+      .orderBy(desc(events.publishedAt))
+      .limit(MAX_ROWS);
   } catch {
     return [];
   }
@@ -135,7 +149,7 @@ export default async function ReleasesPage({ params }: PageProps) {
 
   const meta = getProviderMeta(provider);
   const rows = await loadReleases(provider);
-  const groups = groupByVersion(rows);
+  const groups = groupByVersion(rows).slice(0, MAX_VERSIONS);
   const components = mdxDocComponents(provider);
 
   return (

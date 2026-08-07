@@ -53,12 +53,14 @@ export async function generateMetadata({
   };
 }
 
-// Force dynamic — every section reads live DB rows; the Docker build runs
-// without DATABASE_URL and would otherwise ship an empty page. Unknown
-// providers are hard-404'd upstream by src/middleware.ts (a top-level
-// dynamic-segment `dynamicParams = false` only soft-404s in this Next
-// version, so the gate lives in middleware, not here).
-export const dynamic = "force-dynamic";
+// ISR — every section reads live DB rows, but they change at most a few
+// times a day, so a 5-minute revalidate window lets the CDN serve cached
+// HTML. Builds without DATABASE_URL prerender an empty fallback via
+// tryGetDb(); the first runtime revalidation fills it in. Unknown providers
+// are hard-404'd upstream by src/middleware.ts (a top-level dynamic-segment
+// `dynamicParams = false` only soft-404s in this Next version, so the gate
+// lives in middleware, not here).
+export const revalidate = 300;
 
 interface ProviderFeed {
   mcp: McpServer[];

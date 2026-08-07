@@ -39,9 +39,11 @@ export async function generateMetadata({
   return { title: p ? `${getProviderMeta(p).label} status` : "Not found" };
 }
 
-// DB-backed: force dynamic so the page always has live content (the Docker
-// build runs without DATABASE_URL and would otherwise ship an empty cache).
-export const dynamic = "force-dynamic";
+// ISR — the status source is polled every 10 minutes, but a fresh incident
+// should surface quickly, so use a 60-second revalidate window. Builds without
+// DATABASE_URL prerender an empty fallback via tryGetDb(); the first runtime
+// revalidation fills it in.
+export const revalidate = 60;
 
 type StatusTone = "operational" | "degraded" | "outage" | "neutral";
 

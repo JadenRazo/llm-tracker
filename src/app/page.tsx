@@ -31,9 +31,11 @@ export const metadata: Metadata = {
     "Track what ships across Claude, OpenAI, and Gemini in one place. Claude Code and Codex are the coding headliners; every release, CLI change, and model is version-pinned and re-verified as it lands.",
 };
 
-// Force dynamic — the aggregated feed reads live DB rows; the Docker build
-// runs without DATABASE_URL and would otherwise ship an empty page.
-export const dynamic = "force-dynamic";
+// ISR — the aggregated feed changes at most a few times a day (pollers run
+// every 5–30 min), so a 5-minute revalidate window lets the CDN serve cached
+// HTML (s-maxage) instead of no-store. Builds without DATABASE_URL prerender
+// an empty fallback via tryGetDb(); the first runtime revalidation fills it in.
+export const revalidate = 300;
 
 async function loadCrossProviderFeed(): Promise<Event[]> {
   const db = tryGetDb();
