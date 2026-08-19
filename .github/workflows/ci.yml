@@ -42,7 +42,19 @@ jobs:
       - name: Lint
         run: npm run lint
 
-      # No DATABASE_URL on purpose — the app degrades gracefully at build time
-      # (DB-backed pages fall back to empty data / runtime fetching).
+      # No DATABASE_URL on purpose — the build must not need VPC access to the
+      # production database. That is exactly why the next step exists: with no
+      # DATABASE_URL, anything prerendered here is prerendered EMPTY.
       - name: Build
         run: npm run build
+
+      # The check that would have caught the outage: a DB-backed route that gets
+      # prerendered ships an empty snapshot, and the Lambda's read-only
+      # filesystem cannot durably replace it.
+      - name: Assert no DB-backed route is prerendered
+        run: npm run check:prerender
+
+      # The poller bundle must build and load, or the ingest half of the deploy
+      # fails after the web half has already shipped.
+      - name: Build poller bundle
+        run: npm run build:poller

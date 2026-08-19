@@ -391,8 +391,12 @@ export async function runOpenaiCodexReference(): Promise<RunResult> {
 
   const parsed = [...flags, ...configKeys];
 
-  const anyBody = Boolean(refRes.body || cfgRes.body);
-  if (anyBody && flags.length < MIN_EXPECTED_ROWS) {
+  // Gate on the COMMANDS page's own body, not "either page returned something".
+  // `flags` can only be non-empty when `refRes.body` exists, and the two pages
+  // 304 independently — so on any poll where the commands page is unchanged and
+  // the config page is not, the old `anyBody` condition threw the very
+  // "parsed only 0 flags" error this parser was rewritten to eliminate.
+  if (refRes.body && flags.length < MIN_EXPECTED_ROWS) {
     throw new Error(
       `${SOURCE_KEY}: parsed only ${flags.length} flags from ${REFERENCE_URL} (< ${MIN_EXPECTED_ROWS}); markup likely changed`,
     );

@@ -104,6 +104,18 @@ const nextConfig: NextConfig = {
         ],
       },
       {
+        // Tips/guides INDEX pages are fully static (no `revalidate` export), so
+        // Next emits a bare `s-maxage=31536000` and no stale-while-revalidate at
+        // all — `expireTime` only shortens a swr window, so it does not reach
+        // these. Their content changes only at deploy, where the CloudFront
+        // invalidation is the real mechanism; this is the self-heal floor for
+        // the case where an invalidation is skipped or fails.
+        source: "/:provider(claude|openai|gemini)/:section(guides|tips)",
+        headers: [
+          { key: "Cache-Control", value: "public, s-maxage=3600, stale-while-revalidate=60" },
+        ],
+      },
+      {
         // Next's hashed static bundles are immutable — let browsers + CDNs cache them forever.
         source: "/_next/static/(.*)",
         headers: [
