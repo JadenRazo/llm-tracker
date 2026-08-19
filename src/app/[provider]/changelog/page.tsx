@@ -2,17 +2,20 @@
 // ISO week. Top: a non-interactive per-source count chip row. Below: week
 // blocks (Monday-starting) rendered most-recent-first as a 2-col card grid.
 
-import { desc, eq, sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { Package } from "lucide-react";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { tryGetDb } from "@/lib/db";
 import { events } from "@/lib/db/schema";
+import { eventRecencyDesc } from "@/lib/db/order";
 import { Container } from "@/components/ui/container";
 import { PageHeader } from "@/components/ui/page-header";
 import { SectionHeading } from "@/components/ui/section-heading";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
+import { DataUnavailable } from "@/components/ui/data-unavailable";
+import type { LoadResult } from "@/lib/load-result";
 import { EventCard, type EventCardData } from "@/components/event-card";
 import { getSource } from "@/components/sources";
 import { PROVIDERS, type Provider } from "@/lib/providers";
@@ -39,7 +42,7 @@ export async function generateMetadata({
 // window never lags ingest by more than one cycle and lets the CDN serve
 // cached HTML. Builds without DATABASE_URL prerender an empty fallback via
 // tryGetDb(); the first runtime revalidation fills it in.
-export const revalidate = 300;
+export const dynamic = "force-dynamic";
 
 /** Rows shown on the page. 100 events covers several weeks of ingest; the
  * page renders every row it fetches, so this is also the page length. */
@@ -51,9 +54,9 @@ const MAX_EVENTS = 100;
  * release bodies the list never displays. */
 const PREVIEW_CHARS = 2000;
 
-async function loadAll(provider: Provider): Promise<EventCardData[]> {
+async function loadAll(provider: Provider): Promise<LoadResult<EventCardData>> {
   const db = tryGetDb();
-  if (!db) return [];
+  if (!db) return null;
   try {
     // Project only the columns the list cards read — full rows include
     // complete markdown bodies that the changelog list never renders.
@@ -70,10 +73,10 @@ async function loadAll(provider: Provider): Promise<EventCardData[]> {
       })
       .from(events)
       .where(eq(events.provider, provider))
-      .orderBy(desc(events.publishedAt))
+      .orderBy(eventRecencyDesc)
       .limit(MAX_EVENTS);
   } catch {
-    return [];
+    return null;
   }
 }
 
@@ -159,7 +162,8 @@ export default async function ChangelogPage({ params }: PageProps) {
   if (!provider) notFound();
 
   const meta = getProviderMeta(provider);
-  const rows = await loadAll(provider);
+  const result = await loadAll(provider);
+  const rows = result ?? [];
   const weeks = groupByWeek(rows);
   const currentYear = new Date().getUTCFullYear();
   const sourceCounts = countBySource(rows);
@@ -173,7 +177,9 @@ export default async function ChangelogPage({ params }: PageProps) {
         description={`Every release, doc update, and news item across the ${meta.label} ecosystem. Deduped and sorted by publish date.`}
       />
 
-      {rows.length === 0 ? (
+      {result === null ? (
+        <DataUnavailable what="The changelog" />
+      ) : rows.length === 0 ? (
         <EmptyState
           icon={Package}
           title="No events yet"

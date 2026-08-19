@@ -142,3 +142,15 @@ export function getTip(slug: string): ContentItem | null {
 export function getGuide(slug: string): ContentItem | null {
   return getOne("guides", slug);
 }
+
+/**
+ * Which providers have at least one tip / guide. The header uses this to hide
+ * sections that would open onto "No tips yet": all curated MDX is Claude-only,
+ * so the nav previously offered Tips and Guides for OpenAI and Gemini and both
+ * led to an empty page. Offering a section is a promise; this keeps it honest
+ * without deleting the sections for the provider that does have content.
+ */
+export function providersWithContent(kind: "tips" | "guides"): Provider[] {
+  const items = kind === "tips" ? listTips() : listGuides();
+  return [...new Set(items.map((i) => i.frontmatter.provider))];
+}

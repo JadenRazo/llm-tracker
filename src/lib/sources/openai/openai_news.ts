@@ -1,8 +1,13 @@
-// Parses openai.com/news/rss.xml (RSS 2.0). Stores link + title + date only.
-// The HTML index 403s, so the RSS feed is the only viable entry point.
-// Event shape mirrors claude/anthropic_news.ts (one event per item, no body).
+// Parses openai.com/news/rss.xml (RSS 2.0). The HTML index 403s, so the RSS
+// feed is the only viable entry point.
+//
+// The feed ships a one-paragraph <description> on ~1,035 of its ~1,141 items and
+// this source used to hardcode `bodyMd: null`, discarding every one — OpenAI
+// news rendered as a bare headline on the home feed and the changelog while
+// Gemini's equivalent carried a summary. We keep the summary now.
 
 import * as cheerio from "cheerio";
+import { sql } from "drizzle-orm";
 import { tryGetDb } from "@/lib/db";
 import { events } from "@/lib/db/schema";
 import { fetchConditional } from "@/lib/poller/conditional-fetch";
@@ -20,7 +25,13 @@ interface Article {
   category: string | null;
   url: string;
   publishedAt: Date | null;
+  /** One-paragraph summary from <description>, when the feed supplies one. */
+  summary: string | null;
 }
+
+/** Upper bound on a stored summary — feed items are a paragraph; anything far
+ *  past that is markup we failed to strip, not prose. */
+const MAX_SUMMARY_CHARS = 600;
 
 function slugFromUrl(url: string): string {
   try {
@@ -48,13 +59,19 @@ function parseFeed(xml: string): Article[] {
     seen.add(guid);
 
     const category = item.find("category").first().text().trim() || null;
+    // cheerio in xmlMode returns the decoded text of CDATA/entity content; strip
+    // any residual tags so a feed that embeds HTML can't inject markup downstream.
+    const rawSummary = item.find("description").first().text().trim();
+    const summary = rawSummary
+      ? rawSummary.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim().slice(0, MAX_SUMMARY_CHARS) || null
+      : null;
     const pubDateRaw = item.find("pubDate").first().text().trim();
     let publishedAt: Date | null = null;
     if (pubDateRaw) {
       const d = new Date(pubDateRaw);
       publishedAt = Number.isNaN(d.getTime()) ? null : d;
     }
-    out.push({ guid, title, category, url: link, publishedAt });
+    out.push({ guid, title, category, url: link, publishedAt, summary });
   });
 
   return out;
@@ -82,7 +99,7 @@ export async function runOpenaiNews(): Promise<RunResult> {
     type: article.category ? `news:${article.category.toLowerCase()}` : "news",
     externalId: article.guid,
     title: article.title,
-    bodyMd: null,
+    bodyMd: article.summary,
     url: article.url,
     publishedAt: article.publishedAt,
     provider: PROVIDER,
@@ -94,9 +111,27 @@ export async function runOpenaiNews(): Promise<RunResult> {
     .onConflictDoNothing({ target: [events.source, events.externalId] })
     .returning({ id: events.id });
 
+  // Backfill: rows ingested before this source kept summaries have body_md NULL.
+  // A plain upsert would misreport them as inserts, so fill them in one targeted
+  // statement instead. Only NULL bodies are touched — never an existing one.
+  const withSummary = rows.filter((r) => r.bodyMd !== null);
+  const backfilled = withSummary.length === 0 ? [] : await db
+    .update(events)
+    .set({ bodyMd: sql`excluded_summary.summary` })
+    .from(
+      sql`(values ${sql.join(
+        withSummary.map((r) => sql`(${r.externalId}, ${r.bodyMd})`),
+        sql`, `,
+      )}) as excluded_summary(external_id, summary)`,
+    )
+    .where(
+      sql`${events.source} = ${SOURCE_KEY} and ${events.externalId} = excluded_summary.external_id and ${events.bodyMd} is null`,
+    )
+    .returning({ id: events.id });
+
   return {
     inserted: inserted.length,
-    updated: 0,
+    updated: backfilled.length,
     skipped: articles.length - inserted.length,
     status: "ok",
     etag: res.etag,

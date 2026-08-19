@@ -11,6 +11,7 @@ import { notFound } from "next/navigation";
 import { ArrowUpRight, Boxes, Clock, Package, Terminal } from "lucide-react";
 import { tryGetDb } from "@/lib/db";
 import { cliReference, events, mcpServers, models } from "@/lib/db/schema";
+import { eventRecencyDesc } from "@/lib/db/order";
 import type { CliReference, Event, McpServer } from "@/lib/db/schema";
 import { listGuides } from "@/lib/content";
 import { CommandGrid } from "@/components/home/command-grid";
@@ -60,7 +61,14 @@ export async function generateMetadata({
 // are hard-404'd upstream by src/middleware.ts (a top-level dynamic-segment
 // `dynamicParams = false` only soft-404s in this Next version, so the gate
 // lives in middleware, not here).
-export const revalidate = 300;
+// Rendered per request (no ISR). This app runs as a Lambda container image with a
+// READ-ONLY filesystem, so Next's incremental cache cannot persist a regeneration:
+// any container with a cold cache served the build-time prerender, which CI produces
+// with no DATABASE_URL and is therefore EMPTY. Whether a visitor saw data was a coin
+// flip on container age, and CloudFront then pinned whichever answer it drew. The
+// origin now always renders live DB data; the CDN owns caching via the explicit,
+// bounded Cache-Control set for this path in next.config.ts.
+export const dynamic = "force-dynamic";
 
 interface ProviderFeed {
   mcp: McpServer[];
@@ -107,7 +115,7 @@ async function loadFeed(provider: Provider): Promise<ProviderFeed> {
           .limit(48),
         db.query.events.findFirst({
           where: (e, { eq: eqQ }) => eqQ(e.source, pm.cliVersionSource),
-          orderBy: (e, { desc: d }) => [d(e.publishedAt)],
+          orderBy: () => [eventRecencyDesc],
         }),
         db
           .select({ count: sql<number>`count(*)::int` })
@@ -123,7 +131,7 @@ async function loadFeed(provider: Provider): Promise<ProviderFeed> {
           .select()
           .from(events)
           .where(eq(events.provider, provider))
-          .orderBy(desc(events.publishedAt))
+          .orderBy(eventRecencyDesc)
           .limit(8),
       ]);
 

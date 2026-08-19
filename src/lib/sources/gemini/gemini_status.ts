@@ -156,8 +156,69 @@ export async function runGeminiStatus(): Promise<RunResult> {
 
   const db = tryGetDb();
   if (!db) return { inserted: 0, updated: 0, skipped: 1, status: "skipped" };
+
+  let inserted = 0;
+  let updated = 0;
+
+  // ---- current overall status -------------------------------------------
+  // Google Cloud publishes no "current indicator" endpoint the way Anthropic and
+  // OpenAI do, so we derive one: an incident with no `end` is still open. Without
+  // this the /gemini/status page had no snapshot row to render and showed
+  // "Status stream warming up" permanently, while its two siblings showed a live
+  // banner. The body states the derivation so the page never asserts more than
+  // the feed actually supports.
+  const ongoing = relevant.filter((i) => !i.end);
+  const currentTitle =
+    ongoing.length === 0 ? "Status: All Systems Operational" : "Status: Degraded Performance";
+  const currentBody =
+    ongoing.length === 0
+      ? "Indicator: **none**\n\nDerived from the Google Cloud incident feed: no open incident affecting AI products."
+      : `Indicator: **degraded**\n\n${ongoing.length} open Google Cloud incident${
+          ongoing.length === 1 ? "" : "s"
+        } affecting AI products:\n\n${ongoing
+          .map((i) => `- ${i.external_desc ?? `GCP AI incident ${i.number ?? i.id}`}`)
+          .join("\n")}`;
+
+  const existingCurrent = await db
+    .select({ id: events.id, title: events.title, bodyMd: events.bodyMd })
+    .from(events)
+    .where(and(eq(events.source, SOURCE_KEY), eq(events.externalId, "current")))
+    .limit(1);
+
+  if (existingCurrent.length === 0) {
+    await db
+      .insert(events)
+      .values({
+        source: SOURCE_KEY,
+        type: "status",
+        externalId: "current",
+        title: currentTitle,
+        bodyMd: currentBody,
+        url: STATUS_PAGE,
+        provider: PROVIDER,
+      })
+      .onConflictDoNothing({ target: [events.source, events.externalId] });
+    inserted++;
+  } else if (
+    existingCurrent[0]!.title !== currentTitle ||
+    existingCurrent[0]!.bodyMd !== currentBody
+  ) {
+    await db
+      .update(events)
+      .set({ title: currentTitle, bodyMd: currentBody, detectedAt: new Date() })
+      .where(eq(events.id, existingCurrent[0]!.id));
+    updated++;
+  }
+
   if (relevant.length === 0) {
-    return { inserted: 0, updated: 0, skipped: all.length, status: "ok", etag: res.etag, lastModified: res.lastModified };
+    return {
+      inserted,
+      updated,
+      skipped: all.length,
+      status: "ok",
+      etag: res.etag,
+      lastModified: res.lastModified,
+    };
   }
 
   const ids = relevant.map((i) => i.id);
@@ -197,16 +258,13 @@ export async function runGeminiStatus(): Promise<RunResult> {
     }
   }
 
-  let inserted = 0;
-  let updated = 0;
-
   if (toInsert.length > 0) {
     const insertedRows = await db
       .insert(events)
       .values(toInsert)
       .onConflictDoNothing({ target: [events.source, events.externalId] })
       .returning({ id: events.id });
-    inserted = insertedRows.length;
+    inserted += insertedRows.length;
   }
   for (const u of toUpdate) {
     await db

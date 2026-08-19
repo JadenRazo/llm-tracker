@@ -19,6 +19,13 @@ export interface ConditionalFetchResult {
   etag?: string;
   lastModified?: string;
   unchanged: boolean;
+  /**
+   * Set when the response was refused for exceeding the body cap. Without this
+   * flag callers see `{status: 200, body: undefined}` and report "returned
+   * status 200" — which is what hid the @openai/codex packument outgrowing the
+   * cap for weeks. Callers MUST surface this distinctly.
+   */
+  oversized?: boolean;
 }
 
 export interface ConditionalFetchOptions {
@@ -27,6 +34,13 @@ export interface ConditionalFetchOptions {
   timeoutMs?: number;
   /** Max retry attempts on 5xx / network errors. Default 2. */
   maxRetries?: number;
+  /**
+   * Per-source body cap in bytes. Defaults to DEFAULT_MAX_BODY_BYTES. Raise it
+   * for a source whose upstream document is legitimately large (npm packuments
+   * for high-churn packages run to tens of MB), never to accommodate an
+   * upstream that has actually gone wrong.
+   */
+  maxBodyBytes?: number;
 }
 
 const headerCache = new Map<string, { etag?: string; lastModified?: string }>();
@@ -59,10 +73,11 @@ async function loadCacheHeaders(sourceKey: string): Promise<{ etag?: string; las
   }
 }
 
-// Hard cap on a response body. Upstream feeds are JSON/markdown/RSS in the
-// low-KB-to-low-MB range; anything past this is a misconfigured or hostile
-// upstream and must not be buffered into memory unbounded.
-const MAX_BODY_BYTES = 10 * 1024 * 1024; // 10 MB
+// Default cap on a response body. Most upstream feeds are JSON/markdown/RSS in
+// the low-KB-to-low-MB range; anything past this is a misconfigured or hostile
+// upstream and must not be buffered into memory unbounded. Individual sources
+// raise it via `maxBodyBytes` when their upstream is legitimately larger.
+const DEFAULT_MAX_BODY_BYTES = 10 * 1024 * 1024; // 10 MB
 
 /**
  * Reads the response body with a hard byte cap. Streams the body and aborts
@@ -70,7 +85,7 @@ const MAX_BODY_BYTES = 10 * 1024 * 1024; // 10 MB
  * Returns null if the cap is exceeded (caller treats as a soft skip — same
  * shape as a non-ok response: no body), otherwise the decoded text.
  */
-async function readCapped(res: Response, sourceKey: string): Promise<string | null> {
+async function readCapped(res: Response, sourceKey: string, maxBytes: number): Promise<string | null> {
   if (!res.body) {
     // No stream (e.g. some runtimes on empty bodies) — fall back to text();
     // bounded by the Content-Length pre-check the caller already did.
@@ -85,11 +100,11 @@ async function readCapped(res: Response, sourceKey: string): Promise<string | nu
       if (done) break;
       if (!value) continue;
       total += value.byteLength;
-      if (total > MAX_BODY_BYTES) {
+      if (total > maxBytes) {
         await reader.cancel();
         // eslint-disable-next-line no-console
         console.warn(
-          `[${sourceKey}] response body exceeded ${MAX_BODY_BYTES} bytes — aborting read (soft skip)`,
+          `[${sourceKey}] response body exceeded ${maxBytes} bytes — aborting read (soft skip)`,
         );
         return null;
       }
@@ -121,6 +136,7 @@ export async function fetchConditional(
   const { etag, lastModified } = await loadCacheHeaders(sourceKey);
   const maxRetries = options.maxRetries ?? 2;
   const timeoutMs = options.timeoutMs ?? 30_000;
+  const maxBodyBytes = options.maxBodyBytes ?? DEFAULT_MAX_BODY_BYTES;
 
   const headers: Record<string, string> = {
     "User-Agent": "llm-tracker/0.1 (+https://llm.raizhost.com)",
@@ -161,10 +177,10 @@ export async function fetchConditional(
       // (status preserved, body undefined) rather than throwing out of the
       // poller — an oversized upstream is a skip, not a hard error.
       const contentLength = Number(res.headers.get("content-length"));
-      if (Number.isFinite(contentLength) && contentLength > MAX_BODY_BYTES) {
+      if (Number.isFinite(contentLength) && contentLength > maxBodyBytes) {
         // eslint-disable-next-line no-console
         console.warn(
-          `[${sourceKey}] Content-Length ${contentLength} exceeds ${MAX_BODY_BYTES} bytes — skipping (no body read)`,
+          `[${sourceKey}] Content-Length ${contentLength} exceeds ${maxBodyBytes} bytes — skipping (no body read)`,
         );
         return {
           status: res.status,
@@ -172,13 +188,14 @@ export async function fetchConditional(
           etag: res.headers.get("etag") ?? undefined,
           lastModified: res.headers.get("last-modified") ?? undefined,
           unchanged: false,
+          oversized: true,
         };
       }
 
       // Defensive cap on the actual read (handles chunked / missing
       // Content-Length). readCapped returns null past the cap → treat as a
       // soft skip by leaving body undefined.
-      const text = res.ok ? await readCapped(res, sourceKey) : null;
+      const text = res.ok ? await readCapped(res, sourceKey, maxBodyBytes) : null;
       const body = text ?? undefined;
       const result: ConditionalFetchResult = {
         status: res.status,
@@ -186,6 +203,8 @@ export async function fetchConditional(
         etag: res.headers.get("etag") ?? undefined,
         lastModified: res.headers.get("last-modified") ?? undefined,
         unchanged: false,
+        // res.ok with no body can only mean the read hit the cap.
+        ...(res.ok && body === undefined ? { oversized: true } : {}),
       };
       if (res.ok && body !== undefined) {
         headerCache.set(sourceKey, { etag: result.etag, lastModified: result.lastModified });

@@ -3,13 +3,14 @@
 // Layout unchanged from the legacy /status: tinted hero card + dotted-rail
 // incident timeline.
 
-import { and, desc, eq, ne } from "drizzle-orm";
+import { and, eq, ne } from "drizzle-orm";
 import { MDXRemote } from "next-mdx-remote/rsc";
 import { Activity, ShieldCheck } from "lucide-react";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { tryGetDb } from "@/lib/db";
 import { events } from "@/lib/db/schema";
+import { eventRecencyDesc } from "@/lib/db/order";
 import type { Event } from "@/lib/db/schema";
 import { sanitizeMdx } from "@/lib/mdx-sanitize";
 import { Container } from "@/components/ui/container";
@@ -17,6 +18,8 @@ import { PageHeader } from "@/components/ui/page-header";
 import { SectionHeading } from "@/components/ui/section-heading";
 import { Card } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
+import { DataUnavailable } from "@/components/ui/data-unavailable";
+import type { LoadResult } from "@/lib/load-result";
 import { RelativeTime } from "@/components/ui/relative-time";
 import { EventCard } from "@/components/event-card";
 import { PROVIDERS, type Provider } from "@/lib/providers";
@@ -43,7 +46,14 @@ export async function generateMetadata({
 // should surface quickly, so use a 60-second revalidate window. Builds without
 // DATABASE_URL prerender an empty fallback via tryGetDb(); the first runtime
 // revalidation fills it in.
-export const revalidate = 60;
+// Rendered per request (no ISR). This app runs as a Lambda container image with a
+// READ-ONLY filesystem, so Next's incremental cache cannot persist a regeneration:
+// any container with a cold cache served the build-time prerender, which CI produces
+// with no DATABASE_URL and is therefore EMPTY. Whether a visitor saw data was a coin
+// flip on container age, and CloudFront then pinned whichever answer it drew. The
+// origin now always renders live DB data; the CDN owns caching via the explicit,
+// bounded Cache-Control set for this path in next.config.ts.
+export const dynamic = "force-dynamic";
 
 type StatusTone = "operational" | "degraded" | "outage" | "neutral";
 
@@ -75,9 +85,9 @@ function classifyStatus(title: string | null | undefined): StatusTone {
 
 async function loadStatus(
   source: string,
-): Promise<{ current: Event | null; incidents: Event[] }> {
+): Promise<{ current: Event | null; incidents: Event[] } | null> {
   const db = tryGetDb();
-  if (!db) return { current: null, incidents: [] };
+  if (!db) return null;
   try {
     const [currentRows, incidentRows] = await Promise.all([
       db
@@ -89,12 +99,12 @@ async function loadStatus(
         .select()
         .from(events)
         .where(and(eq(events.source, source), ne(events.externalId, "current")))
-        .orderBy(desc(events.publishedAt))
+        .orderBy(eventRecencyDesc)
         .limit(50),
     ]);
     return { current: currentRows[0] ?? null, incidents: incidentRows };
   } catch {
-    return { current: null, incidents: [] };
+    return null;
   }
 }
 
@@ -104,7 +114,9 @@ export default async function StatusPage({ params }: PageProps) {
   if (!provider) notFound();
 
   const meta = getProviderMeta(provider);
-  const { current, incidents } = await loadStatus(meta.statusSource);
+  const status = await loadStatus(meta.statusSource);
+  const current = status?.current ?? null;
+  const incidents = status?.incidents ?? [];
   const tone = classifyStatus(current?.title);
   const toneMeta = TONE_META[tone];
 
@@ -152,6 +164,8 @@ export default async function StatusPage({ params }: PageProps) {
                 ) : null}
               </Card>
             </div>
+          ) : status === null ? (
+            <DataUnavailable what="The status snapshot" />
           ) : (
             <EmptyState
               icon={ShieldCheck}
@@ -168,7 +182,9 @@ export default async function StatusPage({ params }: PageProps) {
             title="Recent incidents"
             count={incidents.length}
           />
-          {incidents.length === 0 ? (
+          {status === null ? (
+            <DataUnavailable what="Incident history" />
+          ) : incidents.length === 0 ? (
             <EmptyState
               icon={ShieldCheck}
               title="All clear"

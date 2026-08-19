@@ -19,6 +19,7 @@ import { fetchConditional } from "@/lib/poller/conditional-fetch";
 import type { RunResult } from "@/lib/poller/runner";
 import type { Provider } from "@/lib/providers";
 import type { SourceDescriptor } from "@/lib/sources/registry";
+import { markProviderRowsStillPresent, sweepIsSafe } from "@/lib/sources/cli-reference-shared";
 
 const SOURCE_KEY = "gemini_cli_reference";
 const PROVIDER: Provider = "gemini";
@@ -177,6 +178,13 @@ export async function runGeminiCliReference(): Promise<RunResult> {
   const res = await fetchConditional(REFERENCE_URL, SOURCE_KEY);
 
   if (res.unchanged) {
+    // 304 — the upstream reference page is byte-identical to the one we last
+    // parsed, so every row we hold is still current. Touch them so a later
+    // partial run can't mistake them for removed, and clear any deprecation an
+    // earlier defect left behind (the unscoped Claude sweep flagged all 40 of
+    // this provider's rows, which hid the entire Gemini CLI reference).
+    const dbUnchanged = tryGetDb();
+    if (dbUnchanged) await markProviderRowsStillPresent(dbUnchanged, PROVIDER, new Date());
     return { inserted: 0, updated: 0, skipped: 0, status: "unchanged", etag: res.etag, lastModified: res.lastModified };
   }
   if (!res.body || res.status >= 400) {
@@ -232,6 +240,9 @@ export async function runGeminiCliReference(): Promise<RunResult> {
       inserted++;
 
       if (!isFirstRun) {
+        // Idempotent: this `events` row survives even if its cli_reference/doc row is
+        // later removed and re-added, so without this the whole run threw on a unique
+        // (source, external_id) violation and lost every later item.
         await db.insert(events).values({
           source: SOURCE_KEY,
           type: `new_${item.kind}`,
@@ -243,7 +254,8 @@ export async function runGeminiCliReference(): Promise<RunResult> {
           url: DOCS_URL,
           publishedAt: now,
           provider: PROVIDER,
-        });
+        })
+        .onConflictDoNothing({ target: [events.source, events.externalId] });
       }
     } else {
       await db
@@ -260,6 +272,15 @@ export async function runGeminiCliReference(): Promise<RunResult> {
         .where(eq(cliReference.id, item.id));
       updated++;
     }
+  }
+
+  // Never deprecate on a run that parsed nothing (all-304, or an upstream that
+  // went quiet) — "we saw no items" is not evidence that items disappeared.
+  // A 304 additionally means every row we hold is still present upstream, so
+  // refresh them and clear any deprecation an earlier defect left behind.
+  if (!sweepIsSafe(parsed.length)) {
+    await markProviderRowsStillPresent(db, PROVIDER, now);
+    return { inserted, updated, skipped: 0, status: "ok" };
   }
 
   // Deprecation sweep — scoped to this source's PROVIDER, not this SOURCE_KEY;
@@ -285,6 +306,9 @@ export async function runGeminiCliReference(): Promise<RunResult> {
     .returning({ id: cliReference.id, kind: cliReference.kind, name: cliReference.name });
 
   for (const row of newlyDeprecated) {
+    // Idempotent: this `events` row survives even if its cli_reference/doc row is
+    // later removed and re-added, so without this the whole run threw on a unique
+    // (source, external_id) violation and lost every later item.
     await db.insert(events).values({
       source: SOURCE_KEY,
       type: `deprecated_${row.kind}`,
@@ -294,7 +318,8 @@ export async function runGeminiCliReference(): Promise<RunResult> {
       url: null,
       publishedAt: now,
       provider: PROVIDER,
-    });
+    })
+    .onConflictDoNothing({ target: [events.source, events.externalId] });
   }
 
   return {

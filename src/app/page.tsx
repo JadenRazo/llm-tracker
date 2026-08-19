@@ -7,18 +7,21 @@
 // token system: one accent per provider mapped to an existing palette var,
 // no gradients, no generic 3-up feature row.
 
-import { desc } from "drizzle-orm";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { ArrowUpRight, Clock } from "lucide-react";
+import { eq } from "drizzle-orm";
 import { tryGetDb } from "@/lib/db";
 import { events } from "@/lib/db/schema";
+import { eventRecencyDesc } from "@/lib/db/order";
 import type { Event } from "@/lib/db/schema";
 import { Container } from "@/components/ui/container";
 import { EmptyState } from "@/components/ui/empty-state";
+import { DataUnavailable } from "@/components/ui/data-unavailable";
+import type { LoadResult } from "@/lib/load-result";
 import { EventCard } from "@/components/event-card";
 import { SectionHeading } from "@/components/ui/section-heading";
-import { isProvider, type Provider } from "@/lib/providers";
+import { isProvider, PROVIDERS, type Provider } from "@/lib/providers";
 import { PROVIDER_ORDER, getProviderMeta } from "@/lib/provider-meta";
 
 export const metadata: Metadata = {
@@ -35,21 +38,48 @@ export const metadata: Metadata = {
 // every 5–30 min), so a 5-minute revalidate window lets the CDN serve cached
 // HTML (s-maxage) instead of no-store. Builds without DATABASE_URL prerender
 // an empty fallback via tryGetDb(); the first runtime revalidation fills it in.
-export const revalidate = 300;
+// Rendered per request (no ISR). This app runs as a Lambda container image with a
+// READ-ONLY filesystem, so Next's incremental cache cannot persist a regeneration:
+// any container with a cold cache served the build-time prerender, which CI produces
+// with no DATABASE_URL and is therefore EMPTY. Whether a visitor saw data was a coin
+// flip on container age, and CloudFront then pinned whichever answer it drew. The
+// origin now always renders live DB data; the CDN owns caching via the explicit,
+// bounded Cache-Control set for this path in next.config.ts.
+export const dynamic = "force-dynamic";
 
-async function loadCrossProviderFeed(): Promise<Event[]> {
+/** Items shown per provider, so the strip always represents all three. */
+const FEED_PER_PROVIDER = 8;
+
+async function loadCrossProviderFeed(): Promise<LoadResult<Event>> {
   const db = tryGetDb();
-  if (!db) return [];
+  if (!db) return null;
   try {
-    // One pass across every provider's events, newest first. Rows carry a
-    // `provider` column (backfilled in Phase 2.0) so the feed can tag each.
-    return await db
-      .select()
-      .from(events)
-      .orderBy(desc(events.publishedAt))
-      .limit(24);
+    // Fetch the newest N PER PROVIDER, then merge by recency — not one flat
+    // recency-ordered query. This section is headed "ACROSS EVERY PROVIDER", and
+    // a flat query does not deliver that: Claude Code ships several releases a
+    // week against Codex's and Gemini CLI's slower cadence, so pure recency
+    // returned 23 of 24 Claude rows and the strip showed no OpenAI item at all
+    // while the database held 2,795 of them. Per-provider slices keep the
+    // ordering honest (still newest-first) while making the heading true.
+    const perProvider = await Promise.all(
+      PROVIDERS.map((provider) =>
+        db
+          .select()
+          .from(events)
+          .where(eq(events.provider, provider))
+          .orderBy(eventRecencyDesc)
+          .limit(FEED_PER_PROVIDER),
+      ),
+    );
+    return perProvider
+      .flat()
+      .sort(
+        (a, b) =>
+          (b.publishedAt ?? b.detectedAt).getTime() -
+          (a.publishedAt ?? a.detectedAt).getTime(),
+      );
   } catch {
-    return [];
+    return null;
   }
 }
 
@@ -166,7 +196,9 @@ export default async function HomePage() {
               </span>
             }
           />
-          {feed.length === 0 ? (
+          {feed === null ? (
+            <DataUnavailable what="The cross-provider feed" />
+          ) : feed.length === 0 ? (
             <EmptyState
               icon={Clock}
               title="Pollers warming up"

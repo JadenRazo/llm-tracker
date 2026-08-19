@@ -11,6 +11,12 @@ const nextConfig: NextConfig = {
   // Disable Next's built-in in-memory cache so the handler above is the one
   // source of truth (avoids double-caching with divergent lifetimes).
   cacheMaxMemorySize: 0,
+  // Cap the `stale-while-revalidate` Next emits for the remaining ISR routes
+  // (the MDX-backed tips/guides). The default `expireTime` is one YEAR, which let
+  // CloudFront keep serving a single stale response long after `s-maxage` expired —
+  // that is how empty pages survived at the edge for 25+ hours against s-maxage=60.
+  // One hour is well past any deploy's propagation and bounds the blast radius.
+  expireTime: 3600,
   // Pin workspace root to avoid Next.js picking up sibling lockfiles.
   outputFileTracingRoot: path.join(__dirname, "./"),
   // Packages that must stay external (not bundled) in server builds.
@@ -51,6 +57,50 @@ const nextConfig: NextConfig = {
           { key: "Strict-Transport-Security", value: "max-age=31536000; includeSubDomains" },
           { key: "X-Content-Type-Options", value: "nosniff" },
           { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+        ],
+      },
+      // ---- DB-backed pages ----------------------------------------------------
+      // These render per request (`export const dynamic = "force-dynamic"`), so the
+      // CDN — not Next's incremental cache — owns caching. Windows are matched to
+      // each source's poll cadence and are deliberately SHORT: the previous setup
+      // emitted `stale-while-revalidate=31535700` (Next's default `expireTime`),
+      // which let CloudFront serve one unlucky empty response for up to a year.
+      {
+        source: "/",
+        headers: [
+          { key: "Cache-Control", value: "public, s-maxage=120, stale-while-revalidate=300" },
+        ],
+      },
+      {
+        source: "/:provider(claude|openai|gemini)",
+        headers: [
+          { key: "Cache-Control", value: "public, s-maxage=120, stale-while-revalidate=300" },
+        ],
+      },
+      {
+        source: "/:provider(claude|openai|gemini)/changelog",
+        headers: [
+          { key: "Cache-Control", value: "public, s-maxage=120, stale-while-revalidate=300" },
+        ],
+      },
+      {
+        source: "/:provider(claude|openai|gemini)/releases",
+        headers: [
+          { key: "Cache-Control", value: "public, s-maxage=120, stale-while-revalidate=300" },
+        ],
+      },
+      {
+        // Status is the most time-sensitive surface — polled every 10 minutes.
+        source: "/:provider(claude|openai|gemini)/status",
+        headers: [
+          { key: "Cache-Control", value: "public, s-maxage=60, stale-while-revalidate=120" },
+        ],
+      },
+      {
+        // The model catalog changes a handful of times per year; polled every 30 min.
+        source: "/:provider(claude|openai|gemini)/models",
+        headers: [
+          { key: "Cache-Control", value: "public, s-maxage=600, stale-while-revalidate=1800" },
         ],
       },
       {

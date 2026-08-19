@@ -19,7 +19,26 @@ const CAPABILITY_META: Record<string, { icon: LucideIcon; label: string }> = {
   toolUse: { icon: Wrench, label: "Tool use" },
   vision: { icon: Eye, label: "Vision" },
   extendedThinking: { icon: Brain, label: "Extended thinking" },
+  adaptiveThinking: { icon: Brain, label: "Adaptive thinking" },
+  thinking: { icon: Brain, label: "Thinking" },
   pdfs: { icon: FileText, label: "PDFs" },
+  // Gemini capability keys, derived from its docs' capability sections.
+  functionCalling: { icon: Wrench, label: "Function calling" },
+  structuredOutputs: { icon: FileText, label: "Structured outputs" },
+  codeExecution: { icon: Wrench, label: "Code execution" },
+  imageGeneration: { icon: Eye, label: "Image generation" },
+  audioGeneration: { icon: Eye, label: "Audio generation" },
+  computerUse: { icon: Wrench, label: "Computer use" },
+  searchGrounding: { icon: Eye, label: "Search grounding" },
+  groundingWithGoogleMaps: { icon: Eye, label: "Maps grounding" },
+  urlContext: { icon: FileText, label: "URL context" },
+  fileSearch: { icon: FileText, label: "File search" },
+  batchApi: { icon: Wrench, label: "Batch API" },
+  liveApi: { icon: Wrench, label: "Live API" },
+  flexInference: { icon: Wrench, label: "Flex inference" },
+  priorityInference: { icon: Wrench, label: "Priority inference" },
+  priorityTier: { icon: Wrench, label: "Priority tier" },
+  caching: { icon: FileText, label: "Caching" },
 };
 
 interface ResolvedCapability {

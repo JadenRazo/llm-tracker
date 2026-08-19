@@ -147,6 +147,9 @@ export async function runDocsReleaseNotes(): Promise<RunResult> {
       .limit(1);
 
     if (existing.length === 0) {
+      // Idempotent: this `events` row survives even if its cli_reference/doc row is
+      // later removed and re-added, so without this the whole run threw on a unique
+      // (source, external_id) violation and lost every later item.
       await db.insert(events).values({
         source: SOURCE_KEY,
         type: page.slug,
@@ -157,7 +160,8 @@ export async function runDocsReleaseNotes(): Promise<RunResult> {
         contentHash: hash,
         publishedAt: new Date(),
         provider: PROVIDER,
-      });
+      })
+      .onConflictDoNothing({ target: [events.source, events.externalId] });
       inserted++;
     } else if (existing[0]!.contentHash !== hash) {
       await db

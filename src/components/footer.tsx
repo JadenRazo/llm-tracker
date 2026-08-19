@@ -7,15 +7,22 @@ export function Footer() {
       <div className="mx-auto flex max-w-6xl flex-col gap-4 px-4 text-xs text-[var(--color-text-muted)] sm:px-5">
         <div className="flex flex-wrap items-center gap-4 text-meta">
           {/* /api/health is a route handler, not a page — next/link does
-              not apply; the rule is a false positive here. */}
+              not apply; the rule is a false positive here. Labelled "Status
+              JSON", not "API": it is a liveness probe, not a public API, and
+              calling it one promised something the site does not offer. */}
           {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
           <a
             href="/api/health"
             className="text-[var(--color-text-secondary)] hover:text-[var(--color-highlight)]"
           >
-            API
+            Status JSON
           </a>
-          <span className="text-[var(--color-text-muted)]">RSS · coming soon</span>
+          <a
+            href="/rss.xml"
+            className="text-[var(--color-text-secondary)] hover:text-[var(--color-highlight)]"
+          >
+            RSS
+          </a>
         </div>
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <p>

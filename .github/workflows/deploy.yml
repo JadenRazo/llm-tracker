@@ -21,6 +21,7 @@ env:
   FUNCTION_NAME: raizcloud-claude-tracker-web
   ASSETS_BUCKET: raizcloud-claude-tracker-assets-919651863281
   SITE_URL: https://llm.raizhost.com
+  CF_DISTRIBUTION_ID: E1CNTRS4U5EXW7
 
 jobs:
   deploy:
@@ -121,15 +122,59 @@ jobs:
           echo "::error::Timed out waiting for Lambda update to complete"
           exit 1
 
-      # Deploy gate: the site must answer 200 twice (cold start + warm hit).
+      # Invalidate the CDN so the new Cache-Control actually takes effect.
+      #
+      # Without this, CloudFront keeps serving whatever it already holds: the old
+      # responses carried `stale-while-revalidate=31535700` (one year), so a
+      # single empty response could sit at the edge for months. /claude/status was
+      # observed at age=91895s against s-maxage=60.
+      #
+      # Requires cloudfront:CreateInvalidation + GetInvalidation on the
+      # distribution in the raizcloud-claude-tracker-deploy role's inline policy.
+      - name: Invalidate CloudFront
+        run: |
+          ID=$(aws cloudfront create-invalidation \
+            --distribution-id "${CF_DISTRIBUTION_ID}" \
+            --paths '/*' \
+            --query 'Invalidation.Id' --output text)
+          echo "Invalidation ${ID} created; waiting for completion"
+          aws cloudfront wait invalidation-completed \
+            --distribution-id "${CF_DISTRIBUTION_ID}" --id "${ID}"
+          echo "Invalidation ${ID} completed"
+
+      # Deploy gate. HTTP 200 is NOT sufficient: for weeks this site returned 200
+      # on every page while rendering "No events yet" from a build-time prerender
+      # made with no DATABASE_URL, and this smoke test passed every single time.
+      # Assert that the pages actually contain DATA.
       - name: Smoke test production
         run: |
-          for i in 1 2; do
-            CODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 30 "${SITE_URL}")
-            echo "Request ${i}: HTTP ${CODE}"
-            if [ "${CODE}" != "200" ]; then
-              echo "::error::Smoke test failed — ${SITE_URL} returned HTTP ${CODE} on request ${i}"
-              exit 1
-            fi
+          fail() { echo "::error::$1"; exit 1; }
+
+          # 1. Liveness + database reachability.
+          HEALTH=$(curl -sS --max-time 30 "${SITE_URL}/api/health")
+          echo "health: ${HEALTH}"
+          echo "${HEALTH}" | grep -q '"db":"up"' \
+            || fail "Smoke test failed — /api/health does not report db:up (${HEALTH})"
+
+          # 2. Every data-backed page must render real rows, not an empty state.
+          #    One page per provider per surface: an empty state anywhere here
+          #    means the origin lost its database or the render regressed.
+          for PATH_ in / /claude/changelog /openai/changelog /gemini/changelog \
+                       /claude/releases /openai/releases /gemini/releases \
+                       /claude/status /openai/status /gemini/status; do
+            BODY=$(curl -sS --max-time 45 "${SITE_URL}${PATH_}")
+            CODE=$?
+            [ "${CODE}" = "0" ] || fail "Smoke test failed — curl error ${CODE} on ${PATH_}"
+            case "${BODY}" in
+              *"No events yet"*|*"No releases yet"*|*"Status stream warming up"*|*"Nothing has been ingested"*)
+                fail "Smoke test failed — ${PATH_} rendered an EMPTY STATE. The origin is not reading the database." ;;
+            esac
+            echo "ok: ${PATH_} ($(printf '%s' "${BODY}" | wc -c) bytes)"
           done
-          echo "Deploy verified: ${SITE_URL} healthy."
+
+          # 3. The feeds must be well-formed and non-empty.
+          FEED=$(curl -sS --max-time 30 "${SITE_URL}/rss.xml")
+          printf '%s' "${FEED}" | grep -q "<item>" \
+            || fail "Smoke test failed — /rss.xml contains no items"
+
+          echo "Deploy verified: ${SITE_URL} is serving live data."

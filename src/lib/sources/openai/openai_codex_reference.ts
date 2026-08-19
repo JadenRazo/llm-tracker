@@ -21,6 +21,7 @@
 // located or parses to zero records we log and skip it — it must not block the
 // phase. The flags page (reference.md) is the load-bearing source.
 
+import * as cheerio from "cheerio";
 import { and, count, eq, isNull, lt } from "drizzle-orm";
 import { tryGetDb } from "@/lib/db";
 import { cliReference, events, pollerRuns } from "@/lib/db/schema";
@@ -28,11 +29,21 @@ import { fetchConditional } from "@/lib/poller/conditional-fetch";
 import type { RunResult } from "@/lib/poller/runner";
 import type { Provider } from "@/lib/providers";
 import type { SourceDescriptor } from "@/lib/sources/registry";
+import { markProviderRowsStillPresent, sweepIsSafe } from "@/lib/sources/cli-reference-shared";
 
 const SOURCE_KEY = "openai_codex_reference";
 const PROVIDER: Provider = "openai";
-const REFERENCE_URL = "https://developers.openai.com/codex/cli/reference.md";
-const CONFIG_REFERENCE_URL = "https://developers.openai.com/codex/config-reference.md";
+// 2026-08: OpenAI moved the Codex docs to learn.chatgpt.com and stopped shipping
+// the option arrays inside the `.md` payload — the old
+// developers.openai.com/codex/cli/reference.md now 308s to a markdown file whose
+// tables are `<ConfigTable client:load options={globalFlagOptions} />` references
+// with no literal to parse, which is why this source reported "parsed only 0
+// flags" on every run. The data lives in the RENDERED page, serialized into
+// `<astro-island props="...">` attributes, so we read the HTML now.
+const REFERENCE_URL = "https://learn.chatgpt.com/docs/developer-commands?surface=cli";
+const CONFIG_REFERENCE_URL = "https://learn.chatgpt.com/docs/config-file/config-reference";
+const REFERENCE_DOCS_URL = "https://learn.chatgpt.com/docs/developer-commands";
+const CONFIG_DOCS_URL = "https://learn.chatgpt.com/docs/config-file/config-reference";
 
 // Calibrated against the Phase 2.2 live run (~94 flags parsed from
 // reference.md). 15 is a deliberately loose floor: anything under it means the
@@ -128,6 +139,129 @@ function parseRecords(body: string): LiteralRecord[] {
 }
 
 /**
+ * Astro serializes island props as `[typeTag, value]` tuples: 0 = raw value,
+ * 1 = array. Anything else is passed through unchanged — we only need the two
+ * shapes the docs' ConfigTable uses, and an unknown tag degrades to "no rows"
+ * rather than throwing.
+ */
+function decodeAstroProp(value: unknown): unknown {
+  if (Array.isArray(value) && value.length === 2 && typeof value[0] === "number") {
+    const [tag, inner] = value as [number, unknown];
+    if (tag === 1 && Array.isArray(inner)) return inner.map(decodeAstroProp);
+    if (inner !== null && typeof inner === "object") return decodeAstroProp(inner);
+    return inner;
+  }
+  if (Array.isArray(value)) return value.map(decodeAstroProp);
+  if (value !== null && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>).map(([k, v]) => [k, decodeAstroProp(v)]),
+    );
+  }
+  return value;
+}
+
+/**
+ * Pull every ConfigTable row out of a rendered learn.chatgpt.com page.
+ *
+ * The page also renders non-table islands that happen to carry an `options`
+ * prop (the mobile nav tabs are `{value,label}` pairs), so we keep only records
+ * with a non-empty string `key` — the shape every real option row has.
+ */
+function parseAstroIslandOptions(htmlSrc: string): LiteralRecord[] {
+  const $ = cheerio.load(htmlSrc);
+  const out: LiteralRecord[] = [];
+
+  $("astro-island[props]").each((_, el) => {
+    const raw = $(el).attr("props");
+    if (!raw) return;
+    let parsed: unknown;
+    try {
+      // cheerio has already decoded the HTML entities in the attribute value.
+      parsed = JSON.parse(raw);
+    } catch {
+      return;
+    }
+    if (parsed === null || typeof parsed !== "object") return;
+    const optionsProp = (parsed as Record<string, unknown>).options;
+    if (optionsProp === undefined) return;
+
+    const rows = decodeAstroProp(optionsProp);
+    if (!Array.isArray(rows)) return;
+
+    for (const row of rows) {
+      if (row === null || typeof row !== "object") continue;
+      const rec = row as Record<string, unknown>;
+      if (typeof rec.key !== "string" || rec.key.trim() === "") continue;
+      out.push({
+        key: rec.key.trim(),
+        type: typeof rec.type === "string" ? rec.type : undefined,
+        description:
+          typeof rec.description === "string"
+            ? rec.description.replace(/\s+/g, " ").trim()
+            : undefined,
+        defaultValue: typeof rec.defaultValue === "string" ? rec.defaultValue : undefined,
+      });
+    }
+  });
+
+  return out;
+}
+
+/** Map parsed option records onto flag rows (aliases split off the key). */
+function toFlagItems(records: LiteralRecord[]): ParsedItem[] {
+  const items: ParsedItem[] = [];
+  const seen = new Set<string>();
+  for (const rec of records) {
+    // A record's `key` may list aliases: "--image, -i" or "codex resume".
+    const aliases = rec
+      .key!.split(",")
+      .map((x) => x.trim())
+      .filter(Boolean);
+    const name = aliases[0]!;
+    if (!name || seen.has(name)) continue;
+    seen.add(name);
+    const metadata: Record<string, unknown> = {};
+    if (aliases.length > 1) metadata.aliases = aliases.slice(1);
+    if (rec.type) metadata.valueType = rec.type;
+    if (rec.defaultValue !== undefined) metadata.default = rec.defaultValue;
+    items.push({
+      id: `${PROVIDER}:flag:${name}`,
+      kind: "flag",
+      name,
+      description: rec.description ?? null,
+      usage: rec.type ? `${name} <${rec.type}>` : null,
+      docsUrl: REFERENCE_DOCS_URL,
+      metadata,
+    });
+  }
+  return items;
+}
+
+/** Map parsed option records onto config-key rows. */
+function toConfigItems(records: LiteralRecord[]): ParsedItem[] {
+  const items: ParsedItem[] = [];
+  const seen = new Set<string>();
+  for (const rec of records) {
+    const name = rec.key!;
+    if (!name || seen.has(name)) continue;
+    seen.add(name);
+    const metadata: Record<string, unknown> = {};
+    if (rec.type) metadata.valueType = rec.type;
+    if (rec.defaultValue !== undefined) metadata.default = rec.defaultValue;
+    items.push({
+      id: `${PROVIDER}:config-key:${name}`,
+      kind: "config-key",
+      name,
+      description: rec.description ?? null,
+      usage: rec.type ? `${name} = <${rec.type}>` : null,
+      docsUrl: CONFIG_DOCS_URL,
+      metadata,
+    });
+  }
+  return items;
+}
+
+/**
  * reference.md: every `export const NAME = [ ... ];`. We treat array members
  * whose NAME ends in "Options" or "Flags" as flag-like records; "Commands"/
  * "Overview" arrays are subcommands. Both land as kind "flag" with a usage
@@ -212,33 +346,47 @@ export async function runOpenaiCodexReference(): Promise<RunResult> {
     fetchConditional(CONFIG_REFERENCE_URL, `${SOURCE_KEY}_config`),
   ]);
 
-  // reference.md is load-bearing — a hard failure there is a real error.
+  // The commands reference is load-bearing — a hard failure there is a real error.
   if (!refRes.body && !refRes.unchanged) {
-    throw new Error(`codex reference.md returned status ${refRes.status}`);
+    throw new Error(`codex developer-commands page returned status ${refRes.status}`);
   }
 
-  const flags = refRes.body ? parseReferenceMd(refRes.body) : [];
+  // Primary path: the rendered page's astro-island props. Fallback: the legacy
+  // `export const NAME = [...]` literals, kept so an upstream revert (or a
+  // mirror that still ships them) keeps working instead of erroring.
+  const flags = refRes.body
+    ? (() => {
+        const fromIslands = toFlagItems(parseAstroIslandOptions(refRes.body));
+        if (fromIslands.length > 0) return fromIslands;
+        // eslint-disable-next-line no-console
+        console.warn(
+          `[${SOURCE_KEY}] no astro-island option tables found — falling back to legacy literal parsing`,
+        );
+        return parseReferenceMd(refRes.body);
+      })()
+    : [];
 
-  // config-reference.md is best-effort and must not block the phase.
+  // The config reference is best-effort and must not block the phase.
   let configKeys: ParsedItem[] = [];
   if (cfgRes.body) {
     try {
-      configKeys = parseConfigReferenceMd(cfgRes.body);
+      configKeys = toConfigItems(parseAstroIslandOptions(cfgRes.body));
+      if (configKeys.length === 0) configKeys = parseConfigReferenceMd(cfgRes.body);
       if (configKeys.length === 0) {
         // eslint-disable-next-line no-console
-        console.warn(`[${SOURCE_KEY}] config-reference.md parsed 0 keys — structure unclear, skipping`);
+        console.warn(`[${SOURCE_KEY}] config reference parsed 0 keys — structure unclear, skipping`);
       }
     } catch (err) {
       // eslint-disable-next-line no-console
       console.warn(
-        `[${SOURCE_KEY}] config-reference.md parse failed, skipping:`,
+        `[${SOURCE_KEY}] config reference parse failed, skipping:`,
         err instanceof Error ? err.message : String(err),
       );
       configKeys = [];
     }
   } else if (!cfgRes.unchanged) {
     // eslint-disable-next-line no-console
-    console.warn(`[${SOURCE_KEY}] config-reference.md returned status ${cfgRes.status} — skipping`);
+    console.warn(`[${SOURCE_KEY}] config reference returned status ${cfgRes.status} — skipping`);
   }
 
   const parsed = [...flags, ...configKeys];
@@ -246,7 +394,7 @@ export async function runOpenaiCodexReference(): Promise<RunResult> {
   const anyBody = Boolean(refRes.body || cfgRes.body);
   if (anyBody && flags.length < MIN_EXPECTED_ROWS) {
     throw new Error(
-      `${SOURCE_KEY}: parsed only ${flags.length} flags from reference.md (< ${MIN_EXPECTED_ROWS}); markup likely changed`,
+      `${SOURCE_KEY}: parsed only ${flags.length} flags from ${REFERENCE_URL} (< ${MIN_EXPECTED_ROWS}); markup likely changed`,
     );
   }
 
@@ -287,6 +435,9 @@ export async function runOpenaiCodexReference(): Promise<RunResult> {
       inserted++;
 
       if (!isFirstRun) {
+        // Idempotent: this `events` row survives even if its cli_reference/doc row is
+        // later removed and re-added, so without this the whole run threw on a unique
+        // (source, external_id) violation and lost every later item.
         await db.insert(events).values({
           source: SOURCE_KEY,
           type: `new_${item.kind}`,
@@ -298,7 +449,8 @@ export async function runOpenaiCodexReference(): Promise<RunResult> {
           url: item.docsUrl,
           publishedAt: now,
           provider: PROVIDER,
-        });
+        })
+        .onConflictDoNothing({ target: [events.source, events.externalId] });
       }
     } else {
       await db
@@ -315,6 +467,15 @@ export async function runOpenaiCodexReference(): Promise<RunResult> {
         .where(eq(cliReference.id, item.id));
       updated++;
     }
+  }
+
+  // Never deprecate on a run that parsed nothing (all-304, or an upstream that
+  // went quiet) — "we saw no items" is not evidence that items disappeared.
+  // A 304 additionally means every row we hold is still present upstream, so
+  // refresh them and clear any deprecation an earlier defect left behind.
+  if (!sweepIsSafe(parsed.length)) {
+    await markProviderRowsStillPresent(db, PROVIDER, now);
+    return { inserted, updated, skipped: 0, status: "ok" };
   }
 
   // Deprecation sweep — scoped to this source's PROVIDER, not this SOURCE_KEY.
@@ -341,6 +502,9 @@ export async function runOpenaiCodexReference(): Promise<RunResult> {
     .returning({ id: cliReference.id, kind: cliReference.kind, name: cliReference.name });
 
   for (const row of newlyDeprecated) {
+    // Idempotent: this `events` row survives even if its cli_reference/doc row is
+    // later removed and re-added, so without this the whole run threw on a unique
+    // (source, external_id) violation and lost every later item.
     await db.insert(events).values({
       source: SOURCE_KEY,
       type: `deprecated_${row.kind}`,
@@ -350,7 +514,8 @@ export async function runOpenaiCodexReference(): Promise<RunResult> {
       url: null,
       publishedAt: now,
       provider: PROVIDER,
-    });
+    })
+    .onConflictDoNothing({ target: [events.source, events.externalId] });
   }
 
   return {

@@ -18,7 +18,7 @@ export async function registerNode(): Promise<void> {
 
   // Global flag — Next.js may invoke `register` multiple times in some setups
   // (dev HMR, multi-worker). Ensure we only start the scheduler once per process.
-  const flag = "__CLAUDE_TRACKER_CRON_STARTED__";
+  const flag = "__LLM_TRACKER_CRON_STARTED__";
   const g = globalThis as Record<string, unknown>;
   if (g[flag]) return;
   g[flag] = true;

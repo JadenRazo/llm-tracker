@@ -19,6 +19,7 @@ import { fetchConditional } from "@/lib/poller/conditional-fetch";
 import type { RunResult } from "@/lib/poller/runner";
 import type { Provider } from "@/lib/providers";
 import type { SourceDescriptor } from "@/lib/sources/registry";
+import { markProviderRowsStillPresent, sweepIsSafe } from "@/lib/sources/cli-reference-shared";
 
 const SOURCE_KEY = "claude_code_reference";
 const PROVIDER: Provider = "claude";
@@ -233,6 +234,9 @@ export async function runClaudeCodeReference(): Promise<RunResult> {
       inserted++;
 
       if (!isFirstRun) {
+        // Idempotent: this `events` row survives even if its cli_reference/doc row is
+        // later removed and re-added, so without this the whole run threw on a unique
+        // (source, external_id) violation and lost every later item.
         await db.insert(events).values({
           source: SOURCE_KEY,
           type: `new_${item.kind}`,
@@ -244,7 +248,8 @@ export async function runClaudeCodeReference(): Promise<RunResult> {
           url: item.docsUrl,
           publishedAt: now,
           provider: PROVIDER,
-        });
+        })
+        .onConflictDoNothing({ target: [events.source, events.externalId] });
       }
     } else {
       await db
@@ -265,15 +270,41 @@ export async function runClaudeCodeReference(): Promise<RunResult> {
     }
   }
 
+  // Never deprecate on a run that parsed nothing (all-304, or an upstream that
+  // went quiet) — "we saw no items" is not evidence that items disappeared.
+  // A 304 additionally means every row we hold is still present upstream, so
+  // refresh them and clear any deprecation an earlier defect left behind.
+  if (!sweepIsSafe(parsed.length)) {
+    await markProviderRowsStillPresent(db, PROVIDER, now);
+    return { inserted, updated, skipped: 0, status: "ok" };
+  }
+
   // Deprecation sweep — rows not touched for 3+ days that aren't already marked.
+  //
+  // MUST be scoped to this source's provider. Unscoped, this statement reached
+  // EVERY cli_reference row: it marked all 481 OpenAI and all 40 Gemini rows
+  // deprecated (they go stale whenever their own source is failing or 304ing),
+  // which hid every one of them from the site, because the provider pages filter
+  // on `deprecated_at is null`. The OpenAI and Gemini reference sources have
+  // always scoped their sweeps; this one predates the multi-provider split and
+  // was never retrofitted.
   const threeDaysAgo = new Date(now.getTime() - DEPRECATION_STALE_DAYS * 24 * 60 * 60 * 1000);
   const newlyDeprecated = await db
     .update(cliReference)
     .set({ deprecatedAt: now })
-    .where(and(lt(cliReference.lastSeenAt, threeDaysAgo), isNull(cliReference.deprecatedAt)))
+    .where(
+      and(
+        eq(cliReference.provider, PROVIDER),
+        lt(cliReference.lastSeenAt, threeDaysAgo),
+        isNull(cliReference.deprecatedAt),
+      ),
+    )
     .returning({ id: cliReference.id, kind: cliReference.kind, name: cliReference.name });
 
   for (const row of newlyDeprecated) {
+    // Idempotent: this `events` row survives even if its cli_reference/doc row is
+    // later removed and re-added, so without this the whole run threw on a unique
+    // (source, external_id) violation and lost every later item.
     await db.insert(events).values({
       source: SOURCE_KEY,
       type: `deprecated_${row.kind}`,
@@ -283,7 +314,8 @@ export async function runClaudeCodeReference(): Promise<RunResult> {
       url: null,
       publishedAt: now,
       provider: PROVIDER,
-    });
+    })
+    .onConflictDoNothing({ target: [events.source, events.externalId] });
   }
 
   return {

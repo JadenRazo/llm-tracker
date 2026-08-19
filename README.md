@@ -24,8 +24,16 @@ npm run db:push                 # apply schema
 npm run dev                     # http://localhost:3200
 ```
 
-A DB is not strictly required to render pages — every page falls back to a "No data
-yet — poller is warming up" placeholder when `DATABASE_URL` is missing or unreachable.
+`createdb claude_tracker` is not a typo: the physical database keeps its original
+name. Only the product is called LLM Tracker; renaming the database would be a
+separate migration with no user-visible benefit.
+
+Pages render without a database, but they distinguish the two cases:
+`DATABASE_URL` missing or the query failing renders "temporarily unavailable"
+(an outage on our side), while a successful query returning zero rows renders a
+genuine empty state. Those must never be conflated — a database outage that
+reads as "nothing has been ingested" is how a broken deploy looked like a new
+site for weeks.
 
 ## Running a poller manually (dev / smoke test)
 
@@ -45,11 +53,69 @@ to be on localhost.
 
 ## Deploy
 
-`docker compose up -d --build` after copying `.env.example` to `.env` and filling it
-in. Caddy terminates TLS in front of port 3200; the vhost (and the
-`claude.raizhost.com` → `llm.raizhost.com` 301) lives at
-`deploy/caddy/llm.raizhost.com.Caddyfile` — apply steps are in that file's
-header and require hands on the infra host.
+Production runs on AWS, not on the VPS. Pushing to `main` runs CI (typecheck /
+lint / build); a green CI triggers `.github/workflows/deploy.yml`, which assumes
+`raizcloud-claude-tracker-deploy` via GitHub OIDC, builds a native-arm64 image,
+pushes it to ECR, syncs `.next/static` to S3, updates the Lambda, invalidates
+CloudFront, and then smoke-tests the live site.
+
+```
+GitHub (main) ──OIDC──▶ ECR raizcloud/claude-tracker-web
+                          │
+                          ▼
+CloudFront E1CNTRS4U5EXW7 ──▶ API Gateway ──▶ Lambda raizcloud-claude-tracker-web
+  │                                              (arm64, Lambda Web Adapter,
+  └── /_next/static/* ──▶ S3 assets bucket        DISABLE_CRON=1)
+                                                     │
+Polling is SEPARATE: three Lambdas                   ▼
+raizcloud-claude-tracker-poller-t1/t2/t3 ──▶ Postgres on the anchor EC2
+  (EventBridge: 10m / 30m / 2h)                (PgBouncer 10.20.0.249:6432)
+```
+
+The AWS resource names still contain `claude-tracker`. That is deliberate:
+Lambda functions, ECR repositories, and S3 buckets cannot be renamed in place,
+and the strings are invisible to users. **The deploy role's OIDC trust policy is
+pinned to `repo:JadenRazo/claude-tracker:ref:refs/heads/main` — renaming the
+GitHub repository without updating that trust policy first will break every
+deploy.**
+
+### Rendering contract — do not reintroduce ISR here
+
+Every database-backed route sets `export const dynamic = "force-dynamic"` and
+gets an explicit `Cache-Control` in `next.config.ts`. This is not a style
+preference:
+
+* The Lambda runs a container image with a **read-only filesystem**, so Next's
+  incremental cache cannot persist a regeneration. `cache-handler.cjs` keeps
+  regenerations in a per-container memory Map, which dies with the container.
+* CI builds with **no `DATABASE_URL`** (by design — the build must not need the
+  VPC), so the prerender baked into the image is EMPTY.
+* Together those meant any container with a cold cache served empty pages, and
+  CloudFront pinned whichever response it happened to draw for up to a year via
+  Next's default `expireTime` (`stale-while-revalidate=31535700`).
+
+`expireTime` is now capped at one hour, the CDN windows are short and explicit,
+and the deploy smoke test fails if any page renders an empty state.
+
+The legacy VPS path (`docker compose up -d --build` behind Caddy, vhost at
+`deploy/caddy/llm.raizhost.com.Caddyfile`) still works for local or fallback
+hosting, and that Caddyfile is where the `claude.raizhost.com` → `llm.raizhost.com`
+301 lives. It is NOT how production is served.
+
+## Feeds
+
+`/rss.xml` is the cross-provider feed; `/claude/rss.xml`, `/openai/rss.xml`, and
+`/gemini/rss.xml` are per-provider. All four are advertised in `<head>` for
+reader autodiscovery.
+
+## Health
+
+`GET /api/health` reports database reachability, the age of the most recent
+poller run, and any source that is currently failing or has never run. It always
+returns HTTP 200 — the Lambda Web Adapter readiness check and the Docker
+HEALTHCHECK both hit it, and failing those over a degraded dependency would turn
+a degraded site into a total outage. Monitors must assert on `"ok":true` in the
+body, not on the status code.
 
 ## Mobile responsiveness
 

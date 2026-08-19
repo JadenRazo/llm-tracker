@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Inter, JetBrains_Mono, Playfair_Display } from "next/font/google";
 import "./globals.css";
 import { Header } from "@/components/header";
+import { providersWithContent } from "@/lib/content";
 import { Footer } from "@/components/footer";
 
 // Canonical site origin. Env-overridable (e.g. preview deploys) with a safe
@@ -39,6 +40,17 @@ export const metadata: Metadata = {
   description:
     "A self-updating reference tracking what ships across Claude, OpenAI, and Gemini — CLI releases, models, docs, and status. Claude Code and Codex are the coding headliners; everything re-verifies itself as releases land.",
   metadataBase: new URL(SITE_URL),
+  alternates: {
+    canonical: "/",
+    types: {
+      "application/rss+xml": [
+        { url: "/rss.xml", title: "LLM Tracker — all providers" },
+        { url: "/claude/rss.xml", title: "LLM Tracker — Claude" },
+        { url: "/openai/rss.xml", title: "LLM Tracker — OpenAI" },
+        { url: "/gemini/rss.xml", title: "LLM Tracker — Gemini" },
+      ],
+    },
+  },
   openGraph: {
     title: "LLM Tracker — what's shipping across Claude, OpenAI & Gemini",
     description:
@@ -68,7 +80,12 @@ export default function RootLayout({
       className={`${inter.variable} ${jetbrainsMono.variable} ${playfair.variable}`}
     >
       <body className="flex min-h-dvh flex-col">
-        <Header />
+        <Header
+          contentAvailability={{
+            tips: providersWithContent("tips"),
+            guides: providersWithContent("guides"),
+          }}
+        />
         <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-6 sm:px-5 sm:py-8">
           {children}
         </main>

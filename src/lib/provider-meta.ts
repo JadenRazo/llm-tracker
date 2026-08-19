@@ -33,6 +33,14 @@ export interface ProviderMeta {
   /** Source key for the recent-news strip on the provider home. */
   newsSource: string;
   /**
+   * Source key that populates this provider's `models` rows, or null when the
+   * tracker has no model-catalog source for it. The models page reads this to
+   * tell "we poll a catalog and it is empty right now" apart from "there is no
+   * catalog source" — it used to assert the second for every provider with zero
+   * rows, which was false for Claude and Gemini (both have working pollers).
+   */
+  modelsSource: string | null;
+  /**
    * Source key whose latest event title carries the current CLI version
    * (drives the hero version pill + content-staleness checks).
    */
@@ -55,6 +63,7 @@ export const PROVIDER_META: Record<Provider, ProviderMeta> = {
     ],
     statusSource: "anthropic_status",
     newsSource: "anthropic_news",
+    modelsSource: "anthropic_models",
     cliVersionSource: "npm_claude_code",
     releaseLinks: [
       {
@@ -76,6 +85,8 @@ export const PROVIDER_META: Record<Provider, ProviderMeta> = {
     releaseSources: ["openai_codex_npm", "openai_codex_releases"],
     statusSource: "openai_status",
     newsSource: "openai_news",
+    // OpenAI publishes no model catalog the tracker can poll without an API key.
+    modelsSource: null,
     cliVersionSource: "openai_codex_npm",
     releaseLinks: [
       { label: "npm", href: "https://www.npmjs.com/package/@openai/codex" },
@@ -98,6 +109,7 @@ export const PROVIDER_META: Record<Provider, ProviderMeta> = {
     ],
     statusSource: "gemini_status",
     newsSource: "gemini_news",
+    modelsSource: "gemini_models",
     cliVersionSource: "gemini_cli_npm",
     releaseLinks: [
       {

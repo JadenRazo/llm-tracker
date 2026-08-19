@@ -117,13 +117,36 @@ function ProviderSwitcher({
   );
 }
 
-export function Header() {
+export interface HeaderProps {
+  /**
+   * Providers that actually have curated content, per section. Computed on the
+   * server (this component is a client component and cannot read the content
+   * directory) and used to hide nav entries that would land on an empty page.
+   */
+  contentAvailability?: {
+    tips: Provider[];
+    guides: Provider[];
+  };
+}
+
+export function Header({ contentAvailability }: HeaderProps = {}) {
   const pathname = usePathname() ?? "/";
   const [open, setOpen] = useState(false);
 
   const activeProvider = providerFromPathname(pathname);
   // Section links need a concrete base even on the cross-provider root.
   const linkProvider = activeProvider ?? FALLBACK_PROVIDER;
+
+  // Drop Tips/Guides for a provider that has none, so the nav never offers a
+  // section that opens onto an empty state. When availability is not supplied
+  // (older callers / tests) every link renders, as before.
+  const links = contentAvailability
+    ? LINKS.filter((item) => {
+        if (item.suffix === "/tips") return contentAvailability.tips.includes(linkProvider);
+        if (item.suffix === "/guides") return contentAvailability.guides.includes(linkProvider);
+        return true;
+      })
+    : LINKS;
 
   // Close the mobile panel on route change.
   useEffect(() => {
@@ -164,7 +187,7 @@ export function Header() {
           aria-label="Primary"
           className="hidden flex-wrap items-center gap-x-5 gap-y-2 text-ui-sm lg:flex"
         >
-          {LINKS.map((l) => {
+          {links.map((l) => {
             const Icon = l.icon;
             const href = navHref(linkProvider, l.suffix);
             const active =
@@ -237,7 +260,7 @@ export function Header() {
               />
             </div>
             <ul className="mx-auto flex max-w-6xl flex-col px-2 pb-2">
-              {LINKS.map((l) => {
+              {links.map((l) => {
                 const Icon = l.icon;
                 const href = navHref(linkProvider, l.suffix);
                 const active =

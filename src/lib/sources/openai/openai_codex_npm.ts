@@ -14,6 +14,19 @@ const PROVIDER: Provider = "openai";
 const REGISTRY_URL = "https://registry.npmjs.org/@openai/codex";
 const MAX_VERSIONS = 50;
 
+// The full @openai/codex packument is ~12 MB (3,889 published versions) and grows
+// with every release, so it blew past the 10 MB default body cap — every run for
+// weeks reported the misleading "npm registry returned status 200". The full
+// document is the ONLY one that carries the `time` map we date releases from
+// (the abbreviated packument omits it), so raise the cap for this source rather
+// than dropping publish dates.
+const MAX_BODY_BYTES = 48 * 1024 * 1024;
+
+// @openai/codex publishes a per-platform artifact for every release
+// ("0.148.0-linux-x64", "0.148.0-darwin-arm64", ...). They are the same release,
+// so keeping them would push real versions off the ladder and out of MAX_VERSIONS.
+const PLATFORM_SUFFIX_RE = /-(?:darwin|linux|win32)-(?:x64|arm64)$/;
+
 // npm registry is untrusted upstream — validate the shape before we read it.
 // .passthrough() so the registry's many extra fields don't reject a valid doc.
 const npmMetadataSchema = z
@@ -28,10 +41,15 @@ const npmMetadataSchema = z
 type NpmMetadata = z.infer<typeof npmMetadataSchema>;
 
 export async function runOpenaiCodexNpm(): Promise<RunResult> {
-  const res = await fetchConditional(REGISTRY_URL, SOURCE_KEY);
+  const res = await fetchConditional(REGISTRY_URL, SOURCE_KEY, { maxBodyBytes: MAX_BODY_BYTES });
 
   if (res.unchanged) {
     return { inserted: 0, updated: 0, skipped: 0, status: "unchanged", etag: res.etag, lastModified: res.lastModified };
+  }
+  if (res.oversized) {
+    throw new Error(
+      `npm registry body exceeded the ${MAX_BODY_BYTES}-byte cap for this source — raise MAX_BODY_BYTES or narrow the request`,
+    );
   }
   if (!res.body || res.status >= 400) {
     throw new Error(`npm registry returned status ${res.status}`);
@@ -65,6 +83,7 @@ export async function runOpenaiCodexNpm(): Promise<RunResult> {
   const versions = Object.keys(time)
     .filter((k) => k !== "created" && k !== "modified")
     .filter((k) => /^\d+\.\d+\.\d+/.test(k))
+    .filter((k) => !PLATFORM_SUFFIX_RE.test(k))
     .sort((a, b) => new Date(time[b]!).getTime() - new Date(time[a]!).getTime())
     .slice(0, MAX_VERSIONS);
 

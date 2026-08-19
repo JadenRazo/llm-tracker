@@ -6,12 +6,13 @@
 
 import { MDXRemote } from "next-mdx-remote/rsc";
 import { mdxDocComponents } from "@/components/mdx-doc-components";
-import { desc, inArray, sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { GitBranch, Package, Terminal } from "lucide-react";
 import { tryGetDb } from "@/lib/db";
 import { events } from "@/lib/db/schema";
+import { eventRecencyDesc } from "@/lib/db/order";
 import type { Event } from "@/lib/db/schema";
 import { sanitizeMdx } from "@/lib/mdx-sanitize";
 import { getSource } from "@/components/sources";
@@ -19,6 +20,8 @@ import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { Container } from "@/components/ui/container";
 import { EmptyState } from "@/components/ui/empty-state";
+import { DataUnavailable } from "@/components/ui/data-unavailable";
+import type { LoadResult } from "@/lib/load-result";
 import { PageHeader } from "@/components/ui/page-header";
 import { RelativeTime } from "@/components/ui/relative-time";
 import { PROVIDERS, type Provider } from "@/lib/providers";
@@ -46,7 +49,14 @@ export async function generateMetadata({
 // serve cached HTML (MDX compilation is also expensive per-request). Builds
 // without DATABASE_URL prerender an empty fallback via tryGetDb(); the first
 // runtime revalidation fills it in.
-export const revalidate = 300;
+// Rendered per request (no ISR). This app runs as a Lambda container image with a
+// READ-ONLY filesystem, so Next's incremental cache cannot persist a regeneration:
+// any container with a cold cache served the build-time prerender, which CI produces
+// with no DATABASE_URL and is therefore EMPTY. Whether a visitor saw data was a coin
+// flip on container age, and CloudFront then pinned whichever answer it drew. The
+// origin now always renders live DB data; the CDN owns caching via the explicit,
+// bounded Cache-Control set for this path in next.config.ts.
+export const dynamic = "force-dynamic";
 
 /** How many version groups the ladder renders. Claude Code ships several
  * releases a week, so 50 versions is roughly the last two months — older
@@ -54,25 +64,30 @@ export const revalidate = 300;
  * MDX compilation work per render (one compile per event per version). */
 const MAX_VERSIONS = 50;
 
-/** Each version can appear in at most all of a provider's release sources,
- * so this row cap is guaranteed to cover MAX_VERSIONS groups. */
-const MAX_ROWS = MAX_VERSIONS * 3;
-
-async function loadReleases(provider: Provider): Promise<Event[]> {
+async function loadReleases(provider: Provider): Promise<LoadResult<Event>> {
   const db = tryGetDb();
-  if (!db) return [];
+  if (!db) return null;
   const sources = getProviderMeta(provider).releaseSources;
   try {
-    return await db
-      .select()
-      .from(events)
-      .where(
-        sql`${events.provider} = ${provider} and ${inArray(events.source, [...sources])}`,
-      )
-      .orderBy(desc(events.publishedAt))
-      .limit(MAX_ROWS);
+    // Fetch each source's newest rows SEPARATELY rather than taking one flat
+    // recency-ordered window across all of them. A single chatty source starved
+    // the others out of the window: Claude's changelog carries ~370 rows to
+    // npm's ~160, so a flat LIMIT returned changelog entries almost exclusively
+    // and the ladder showed no npm or GitHub rows at all. Per-source fetches
+    // also make the page immune to a bulk re-ingest flattening every timestamp.
+    const perSource = await Promise.all(
+      sources.map((source) =>
+        db
+          .select()
+          .from(events)
+          .where(sql`${events.provider} = ${provider} and ${eq(events.source, source)}`)
+          .orderBy(eventRecencyDesc)
+          .limit(MAX_VERSIONS),
+      ),
+    );
+    return perSource.flat();
   } catch {
-    return [];
+    return null;
   }
 }
 
@@ -135,11 +150,64 @@ function groupByVersion(rows: Event[]): ReleaseGroup[] {
     g.events.sort((a, b) => sourceRank(a.source) - sourceRank(b.source));
   }
 
+  // Order the ladder by VERSION, not by timestamp. Sorting by "newest event in
+  // the group" made the order depend on when we happened to scrape each row —
+  // claude_code_changelog carries no upstream publish date at all, so its groups
+  // sorted by detection time and a bulk re-ingest reshuffled the whole page into
+  // an arbitrary order. A release ladder that is not in version order is not a
+  // ladder. Timestamp remains the tie-breaker for versions that compare equal.
   return Array.from(groups.values()).sort((a, b) => {
-    const al = a.latest?.getTime() ?? 0;
-    const bl = b.latest?.getTime() ?? 0;
-    return bl - al;
+    const byVersion = compareVersionsDesc(a.version, b.version);
+    if (byVersion !== 0) return byVersion;
+    return (b.latest?.getTime() ?? 0) - (a.latest?.getTime() ?? 0);
   });
+}
+
+/**
+ * SemVer-ish descending comparison. Numeric segments compare numerically;
+ * a release outranks any prerelease of the same version ("0.148.0" >
+ * "0.148.0-alpha.11"), and prerelease identifiers compare per SemVer §11
+ * (numeric identifiers below alphanumeric ones, field by field).
+ */
+function compareVersionsDesc(a: string, b: string): number {
+  const parse = (v: string) => {
+    const [core, ...rest] = v.split("-");
+    const nums = core!.split(".").map((n) => Number.parseInt(n, 10) || 0);
+    return { nums, pre: rest.join("-") };
+  };
+  const pa = parse(a);
+  const pb = parse(b);
+
+  for (let i = 0; i < Math.max(pa.nums.length, pb.nums.length); i++) {
+    const d = (pb.nums[i] ?? 0) - (pa.nums[i] ?? 0);
+    if (d !== 0) return d;
+  }
+
+  // Same core version: a release beats a prerelease.
+  if (!pa.pre && pb.pre) return -1;
+  if (pa.pre && !pb.pre) return 1;
+  if (!pa.pre && !pb.pre) return 0;
+
+  const fa = pa.pre.split(".");
+  const fb = pb.pre.split(".");
+  for (let i = 0; i < Math.max(fa.length, fb.length); i++) {
+    const x = fa[i];
+    const y = fb[i];
+    if (x === undefined) return -1; // fewer fields sorts lower → later in desc
+    if (y === undefined) return 1;
+    const nx = /^\d+$/.test(x) ? Number(x) : null;
+    const ny = /^\d+$/.test(y) ? Number(y) : null;
+    if (nx !== null && ny !== null) {
+      if (nx !== ny) return ny - nx;
+    } else if (nx !== null) {
+      return 1; // numeric identifiers have lower precedence
+    } else if (ny !== null) {
+      return -1;
+    } else if (x !== y) {
+      return x < y ? 1 : -1;
+    }
+  }
+  return 0;
 }
 
 export default async function ReleasesPage({ params }: PageProps) {
@@ -148,8 +216,8 @@ export default async function ReleasesPage({ params }: PageProps) {
   if (!provider) notFound();
 
   const meta = getProviderMeta(provider);
-  const rows = await loadReleases(provider);
-  const groups = groupByVersion(rows).slice(0, MAX_VERSIONS);
+  const result = await loadReleases(provider);
+  const groups = groupByVersion(result ?? []).slice(0, MAX_VERSIONS);
   const components = mdxDocComponents(provider);
 
   return (
@@ -177,7 +245,9 @@ export default async function ReleasesPage({ params }: PageProps) {
         }
       />
 
-      {groups.length === 0 ? (
+      {result === null ? (
+        <DataUnavailable what="The release ladder" />
+      ) : groups.length === 0 ? (
         <EmptyState
           icon={Terminal}
           title="No releases yet"
