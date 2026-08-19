@@ -72,6 +72,24 @@ raizcloud-claude-tracker-poller-t1/t2/t3 ──▶ Postgres on the anchor EC2
   (EventBridge: 10m / 30m / 2h)                (PgBouncer 10.20.0.249:6432)
 ```
 
+### The pollers ship with the site
+
+The three scheduled poller functions (`raizcloud-claude-tracker-poller-t1/t2/t3`
+— Zip, nodejs22.x, arm64, handler `index.handler`, tier chosen by the `TIER` env
+var) are built by `npm run build:poller` (esbuild bundle of
+`src/lib/poller/lambda.ts`) and updated in the same deploy job, then invoked once
+each so a bundling mistake fails the pipeline instead of surfacing silently on
+the next EventBridge tick.
+
+Before this existed the pollers had **no deploy path at all**: they were
+hand-uploaded artifacts last modified 2026-06-22 while `deploy.yml` only updated
+the web image, so the ingest half of the tracker ran code nobody could point at
+and no source fix in this repo could reach it. Do not remove those steps — a
+poller change that is not deployed looks exactly like a poller change that does
+not work.
+
+### AWS resource names
+
 The AWS resource names still contain `claude-tracker`. That is deliberate:
 Lambda functions, ECR repositories, and S3 buckets cannot be renamed in place,
 and the strings are invisible to users. **The deploy role's OIDC trust policy is

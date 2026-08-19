@@ -22,6 +22,7 @@ env:
   ASSETS_BUCKET: raizcloud-claude-tracker-assets-919651863281
   SITE_URL: https://llm.raizhost.com
   CF_DISTRIBUTION_ID: E1CNTRS4U5EXW7
+  POLLER_FUNCTIONS: raizcloud-claude-tracker-poller-t1 raizcloud-claude-tracker-poller-t2 raizcloud-claude-tracker-poller-t3
 
 jobs:
   deploy:
@@ -29,7 +30,9 @@ jobs:
     # Native arm64 runner: the Lambda is arm64, and QEMU-emulating a
     # Next.js build on amd64 blew past the 20-minute timeout (run 31037562884).
     runs-on: ubuntu-24.04-arm
-    timeout-minutes: 20
+    # 30, not 20: `aws cloudfront wait invalidation-completed` polls for up to
+    # ~10 minutes on top of the arm64 image build.
+    timeout-minutes: 30
     # Run only when CI on main succeeded, or on manual dispatch.
     if: >-
       github.event_name == 'workflow_dispatch' ||
@@ -52,6 +55,22 @@ jobs:
         with:
           role-to-assume: arn:aws:iam::919651863281:role/raizcloud-claude-tracker-deploy
           aws-region: ${{ env.AWS_REGION }}
+
+      # Fail BEFORE anything ships if the role is missing a permission a later
+      # step needs. Without this, a missing cloudfront grant surfaces only after
+      # `update-function-code` has already deployed, leaving a red pipeline over
+      # a live-but-unverified Lambda and an un-flushed edge.
+      - name: Pre-flight — verify deploy permissions
+        run: |
+          fail() { echo "::error::$1"; exit 1; }
+          aws cloudfront list-invalidations \
+            --distribution-id "${CF_DISTRIBUTION_ID}" --max-items 1 >/dev/null 2>&1 \
+            || fail "role raizcloud-claude-tracker-deploy cannot read CloudFront invalidations. Add cloudfront:CreateInvalidation, GetInvalidation and ListInvalidations on arn:aws:cloudfront::919651863281:distribution/${CF_DISTRIBUTION_ID} to its inline policy deploy-perms."
+          for FN in ${POLLER_FUNCTIONS}; do
+            aws lambda get-function-configuration --function-name "${FN}" >/dev/null 2>&1 \
+              || fail "role raizcloud-claude-tracker-deploy cannot read poller function ${FN}. Add lambda:UpdateFunctionCode, GetFunctionConfiguration and InvokeFunction on the three raizcloud-claude-tracker-poller-* functions to its inline policy deploy-perms."
+          done
+          echo "Pre-flight OK."
 
       - name: Log in to Amazon ECR
         id: ecr
@@ -121,6 +140,64 @@ jobs:
           done
           echo "::error::Timed out waiting for Lambda update to complete"
           exit 1
+
+      # The three scheduled poller Lambdas are Zip functions, separate from the
+      # web container image. Until now they had NO deploy path in this repo —
+      # they were hand-uploaded artifacts last modified 2026-06-22 — so every
+      # ingest fix here was undeliverable and the site could silently run against
+      # poller code from a different source tree. They ship with the site now.
+      # The rest of this job runs Docker, so node deps are not installed yet.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Build poller bundle
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm run build:poller
+          ls -l poller.zip
+
+      - name: Update poller functions
+        run: |
+          for FN in ${POLLER_FUNCTIONS}; do
+            echo "Updating ${FN}"
+            aws lambda update-function-code \
+              --function-name "${FN}" \
+              --zip-file fileb://poller.zip \
+              --no-cli-pager >/dev/null
+          done
+          for FN in ${POLLER_FUNCTIONS}; do
+            for i in $(seq 1 60); do
+              STATUS=$(aws lambda get-function-configuration \
+                --function-name "${FN}" --query LastUpdateStatus --output text)
+              case "${STATUS}" in
+                Successful) echo "${FN}: Successful"; break ;;
+                Failed) echo "::error::${FN} update failed"; exit 1 ;;
+                *) sleep 5 ;;
+              esac
+              if [ "${i}" = "60" ]; then echo "::error::${FN} update timed out"; exit 1; fi
+            done
+          done
+
+      # Run each tier once, synchronously. Two jobs at once: it proves the new
+      # poller code actually executes in the VPC (a bundling mistake shows up
+      # here, not silently 30 minutes later), and it populates the rows the smoke
+      # test asserts on — EventBridge would not fire T2 for up to 30 minutes.
+      - name: Smoke-invoke each poller tier
+        run: |
+          for FN in ${POLLER_FUNCTIONS}; do
+            OUT=$(mktemp)
+            RESP=$(aws lambda invoke --function-name "${FN}" \
+              --cli-binary-format raw-in-base64-out --payload '{}' \
+              --query 'FunctionError' --output text "${OUT}")
+            echo "${FN}: ${RESP}"
+            cat "${OUT}"; echo
+            if [ "${RESP}" != "None" ]; then
+              echo "::error::${FN} returned FunctionError=${RESP}"
+              exit 1
+            fi
+          done
 
       # Invalidate the CDN so the new Cache-Control actually takes effect.
       #

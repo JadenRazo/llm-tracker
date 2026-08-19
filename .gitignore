@@ -36,3 +36,7 @@ yarn-error.log*
 
 # Misc
 .vercel
+
+# Poller Lambda build artifacts (scripts/build-poller.mjs)
+.poller-build/
+poller.zip

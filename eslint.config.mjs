@@ -10,6 +10,12 @@ const compat = new FlatCompat({
 });
 
 const eslintConfig = [
+  {
+    // Generated output, not source. `.poller-build/index.js` is a 2.8 MB esbuild
+    // bundle of the app plus pg/cheerio/drizzle; linting it buried the real
+    // findings under ~10,000 warnings from third-party code.
+    ignores: [".next/**", ".poller-build/**", "poller.zip", "next-env.d.ts"],
+  },
   ...compat.extends("next/core-web-vitals", "next/typescript"),
 ];
 
