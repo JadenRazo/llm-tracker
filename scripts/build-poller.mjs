@@ -163,4 +163,13 @@ if (typeof loaded.handler !== "function") {
   );
 }
 console.log(`poller.zip: ${(size / 1024).toFixed(0)} KB`);
+
+// Emit the tier->source-count manifest the deploy's invoke assertion reads, so
+// that expectation is generated from the registry rather than hand-maintained.
+const manifestPath = path.join(root, "poller-manifest.json");
+await writeFile(
+  manifestPath,
+  `${JSON.stringify({ tierSourceCounts: loaded.TIER_SOURCE_COUNTS }, null, 2)}\n`,
+);
+console.log(`tier source counts: ${JSON.stringify(loaded.TIER_SOURCE_COUNTS)}`);
 await writeFile(path.join(outDir, "meta.json"), JSON.stringify(result.metafile, null, 2));

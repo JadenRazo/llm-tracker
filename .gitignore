@@ -40,3 +40,4 @@ yarn-error.log*
 # Poller Lambda build artifacts (scripts/build-poller.mjs)
 .poller-build/
 poller.zip
+poller-manifest.json

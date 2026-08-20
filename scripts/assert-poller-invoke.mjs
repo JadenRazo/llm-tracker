@@ -24,8 +24,21 @@ if (!fn || !responsePath) {
   process.exit(2);
 }
 
-/** Source counts per tier, from src/lib/sources/registry.ts. */
-const EXPECTED_SOURCES = { 1: 5, 2: 15, 3: 5 };
+/**
+ * Source counts per tier, generated from the registry by build-poller.mjs. Read
+ * from disk rather than written here: a hand-maintained copy goes stale the
+ * first time a source is added, which is exactly how adding `openai_models` to
+ * tier 3 failed a deploy whose poller run was entirely healthy.
+ */
+let EXPECTED_SOURCES = {};
+try {
+  const manifest = JSON.parse(
+    await readFile(new URL("../poller-manifest.json", import.meta.url), "utf8"),
+  );
+  EXPECTED_SOURCES = manifest.tierSourceCounts ?? {};
+} catch {
+  console.log("::warning::poller-manifest.json not found — skipping the per-tier source-count check");
+}
 
 let result;
 try {

@@ -22,6 +22,19 @@
 import { sourcesForTier, type SourceTier } from "@/lib/sources/registry";
 import { isSourceKey, runSource, type SourceKey } from "./runner";
 
+/**
+ * Sources per tier, derived from the registry at build time. `build-poller.mjs`
+ * reads this off the bundle and writes it beside the zip so the deploy's
+ * assertion is generated from the same source of truth that ships, instead of a
+ * hand-maintained map that silently goes stale the first time a source is added
+ * (adding `openai_models` to tier 3 failed a deploy for exactly that reason).
+ */
+export const TIER_SOURCE_COUNTS: Record<number, number> = {
+  1: sourcesForTier(1).length,
+  2: sourcesForTier(2).length,
+  3: sourcesForTier(3).length,
+};
+
 interface PollerEvent {
   /** Optional override, mainly for a manual `aws lambda invoke` smoke test. */
   tier?: number;
