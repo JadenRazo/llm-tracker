@@ -31,7 +31,7 @@
 
 import * as cheerio from "cheerio";
 import { and, eq, inArray, isNull } from "drizzle-orm";
-import { tryGetDb } from "@/lib/db";
+import { tryGetDb, type Database } from "@/lib/db";
 import { events, models } from "@/lib/db/schema";
 import { fetchConditional } from "@/lib/poller/conditional-fetch";
 import type { RunResult } from "@/lib/poller/runner";
@@ -156,11 +156,67 @@ function parseModelCards(html: string): ParsedModel[] {
   return out;
 }
 
+/**
+ * Fill in token limits + capabilities for this provider's rows that still have
+ * none, by reading each model's detail page.
+ *
+ * Deliberately INDEPENDENT of the listing fetch. It was originally inline after
+ * the card parse, which meant it only ran when the listing returned a 200 AND
+ * parsed at least one card — so on a 304 (the common case, the listing changes a
+ * few times a year) or a transient zero-card parse it never ran, and models that
+ * missed their first enrichment stayed dashes indefinitely. This reads rows that
+ * are already in the database; the listing's outcome is irrelevant to it.
+ *
+ * Bounded per run, and a model whose detail page 404s (several `-preview` and
+ * `-image` slugs have no page) simply stays null and is retried cheaply later.
+ */
+async function enrichMissingLimits(db: Database, now: Date): Promise<number> {
+  const needsLimits = await db
+    .select({ id: models.id })
+    .from(models)
+    .where(and(eq(models.provider, PROVIDER), isNull(models.contextWindow)))
+    .limit(MAX_DETAIL_FETCHES);
+
+  let enriched = 0;
+  for (const row of needsLimits) {
+    const detail = await fetchModelDetail(row.id);
+    if (detail.contextWindow === null && detail.maxOutput === null) continue;
+    await db
+      .update(models)
+      .set({
+        contextWindow: detail.contextWindow,
+        maxOutput: detail.maxOutput,
+        ...(Object.keys(detail.capabilities).length > 0
+          ? { capabilities: detail.capabilities }
+          : {}),
+        lastSeenAt: now,
+      })
+      .where(and(eq(models.id, row.id), eq(models.provider, PROVIDER)));
+    enriched++;
+  }
+  if (enriched > 0) {
+    // eslint-disable-next-line no-console
+    console.log(`[${SOURCE_KEY}] enriched ${enriched} model(s) with token limits`);
+  }
+  return enriched;
+}
+
 export async function runGeminiModels(): Promise<RunResult> {
   const res = await fetchConditional(MODELS_URL, SOURCE_KEY);
 
   if (res.unchanged) {
-    return { inserted: 0, updated: 0, skipped: 0, status: "unchanged", etag: res.etag, lastModified: res.lastModified };
+    // The LISTING is unchanged; that says nothing about whether every model we
+    // already hold has its token limits, so still top them up.
+    const dbUnchanged = tryGetDb();
+    const toppedUp = dbUnchanged ? await enrichMissingLimits(dbUnchanged, new Date()) : 0;
+    return {
+      inserted: 0,
+      updated: toppedUp,
+      skipped: 0,
+      status: toppedUp > 0 ? "ok" : "unchanged",
+      etag: res.etag,
+      lastModified: res.lastModified,
+    };
   }
   if (!res.body || res.status >= 400) {
     // eslint-disable-next-line no-console
@@ -173,7 +229,9 @@ export async function runGeminiModels(): Promise<RunResult> {
     // Fail soft — Google's docs layout is fragile; don't error the poller.
     // eslint-disable-next-line no-console
     console.warn(`[${SOURCE_KEY}] parsed 0 model cards — docs layout likely changed; skipping (no data wiped)`);
-    return { inserted: 0, updated: 0, skipped: 1, status: "skipped", etag: res.etag, lastModified: res.lastModified };
+    const dbFallback = tryGetDb();
+    const toppedUp = dbFallback ? await enrichMissingLimits(dbFallback, new Date()) : 0;
+    return { inserted: 0, updated: toppedUp, skipped: 1, status: "skipped", etag: res.etag, lastModified: res.lastModified };
   }
 
   const db = tryGetDb();
@@ -248,41 +306,7 @@ export async function runGeminiModels(): Promise<RunResult> {
     updated++;
   }
 
-  // Enrich rows that still have no token limits with data from their detail
-  // page. Bounded, and a no-op once every listed model has been filled in.
-  const needsLimits = await db
-    .select({ id: models.id })
-    .from(models)
-    .where(
-      and(
-        eq(models.provider, PROVIDER),
-        inArray(models.id, ids),
-        isNull(models.contextWindow),
-      ),
-    )
-    .limit(MAX_DETAIL_FETCHES);
-
-  let enriched = 0;
-  for (const row of needsLimits) {
-    const detail = await fetchModelDetail(row.id);
-    if (detail.contextWindow === null && detail.maxOutput === null) continue;
-    await db
-      .update(models)
-      .set({
-        contextWindow: detail.contextWindow,
-        maxOutput: detail.maxOutput,
-        ...(Object.keys(detail.capabilities).length > 0
-          ? { capabilities: detail.capabilities }
-          : {}),
-        lastSeenAt: now,
-      })
-      .where(and(eq(models.id, row.id), eq(models.provider, PROVIDER)));
-    enriched++;
-  }
-  if (enriched > 0) {
-    // eslint-disable-next-line no-console
-    console.log(`[${SOURCE_KEY}] enriched ${enriched} model(s) with token limits`);
-  }
+  const enriched = await enrichMissingLimits(db, now);
 
   return {
     inserted,
