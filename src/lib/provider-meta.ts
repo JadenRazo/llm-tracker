@@ -85,8 +85,7 @@ export const PROVIDER_META: Record<Provider, ProviderMeta> = {
     releaseSources: ["openai_codex_npm", "openai_codex_releases"],
     statusSource: "openai_status",
     newsSource: "openai_news",
-    // OpenAI publishes no model catalog the tracker can poll without an API key.
-    modelsSource: null,
+    modelsSource: "openai_models",
     cliVersionSource: "openai_codex_npm",
     releaseLinks: [
       { label: "npm", href: "https://www.npmjs.com/package/@openai/codex" },

@@ -42,6 +42,7 @@ export type SourceKey =
   | "openai_codex_npm"
   | "openai_codex_releases"
   | "openai_codex_reference"
+  | "openai_models"
   | "openai_news"
   | "openai_status"
   // ---- Phase 2.2: Gemini (provider "gemini") ----
@@ -87,6 +88,7 @@ import { geminiModelsSource } from "@/lib/sources/gemini/gemini_models";
 import { geminiNewsSource } from "@/lib/sources/gemini/gemini_news";
 import { geminiStatusSource } from "@/lib/sources/gemini/gemini_status";
 import { openaiCodexNpmSource } from "@/lib/sources/openai/openai_codex_npm";
+import { openaiModelsSource } from "@/lib/sources/openai/openai_models";
 import { openaiCodexReferenceSource } from "@/lib/sources/openai/openai_codex_reference";
 import { openaiCodexReleasesSource } from "@/lib/sources/openai/openai_codex_releases";
 import { openaiNewsSource } from "@/lib/sources/openai/openai_news";
@@ -127,6 +129,7 @@ export const SOURCE_REGISTRY: readonly SourceDescriptor[] = [
   anthropicNewsSource,
   mcpServersSource,
   geminiModelsSource,
+  openaiModelsSource,
   openaiNewsSource,
 ] as const;
 
@@ -140,4 +143,23 @@ export function getSourceDescriptor(key: string): SourceDescriptor | undefined {
 
 export function sourcesForTier(tier: SourceTier): readonly SourceDescriptor[] {
   return SOURCE_REGISTRY.filter((d) => d.tier === tier);
+}
+
+/** Human cadence for a tier, matching the cron in src/lib/poller/cron.ts. */
+export const TIER_CADENCE: Record<SourceTier, { short: string; long: string }> = {
+  1: { short: "every 10 min", long: "every 10 minutes" },
+  2: { short: "every 30 min", long: "every 30 minutes" },
+  3: { short: "every 2 h", long: "every 2 hours" },
+};
+
+/**
+ * Poll cadence for a source key, for page copy. Reading it from the registry
+ * means a page can never advertise a schedule the scheduler does not run — the
+ * models page said "polled every 30 minutes" for all three providers while two
+ * of the three catalog sources are tier 3.
+ */
+export function cadenceForSource(key: string | null | undefined): { short: string; long: string } | null {
+  if (!key) return null;
+  const descriptor = getSourceDescriptor(key);
+  return descriptor ? TIER_CADENCE[descriptor.tier] : null;
 }

@@ -161,6 +161,13 @@ export const SOURCES: Record<SourceKey, SourceMeta> = {
     cssVar: "--color-src-docs",
     tintClass: "src-docs",
   },
+  openai_models: {
+    label: "models",
+    longLabel: "OpenAI models",
+    icon: Boxes,
+    cssVar: "--color-src-models",
+    tintClass: "src-models",
+  },
   openai_news: {
     label: "news",
     longLabel: "OpenAI news",

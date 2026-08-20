@@ -39,6 +39,11 @@ const CAPABILITY_META: Record<string, { icon: LucideIcon; label: string }> = {
   priorityInference: { icon: Wrench, label: "Priority inference" },
   priorityTier: { icon: Wrench, label: "Priority tier" },
   caching: { icon: FileText, label: "Caching" },
+  // OpenAI capability keys, derived from its docs' modality + endpoint tables.
+  reasoning: { icon: Brain, label: "Reasoning" },
+  audioInput: { icon: Eye, label: "Audio input" },
+  fineTuning: { icon: Wrench, label: "Fine-tuning" },
+  documented: { icon: FileText, label: "Documented" },
 };
 
 interface ResolvedCapability {

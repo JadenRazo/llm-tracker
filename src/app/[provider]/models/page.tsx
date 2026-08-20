@@ -25,6 +25,7 @@ import { Stat } from "@/components/ui/stat";
 import { PROVIDERS, type Provider } from "@/lib/providers";
 import { parseProviderParam } from "@/lib/provider-route";
 import { getProviderMeta } from "@/lib/provider-meta";
+import { cadenceForSource } from "@/lib/sources/registry";
 
 interface PageProps {
   params: Promise<{ provider: string }>;
@@ -91,6 +92,9 @@ export default async function ModelsPage({ params }: PageProps) {
   if (!provider) notFound();
 
   const meta = getProviderMeta(provider);
+  // Cadence comes from the poller registry, never a hardcoded string: the two
+  // non-Anthropic catalogs are tier 3, and this page claimed 30 minutes for all.
+  const cadence = cadenceForSource(meta.modelsSource);
   const result = await loadModels(provider);
   const rows = result ?? [];
 
@@ -112,8 +116,10 @@ export default async function ModelsPage({ params }: PageProps) {
         icon={Boxes}
         eyebrow="CATALOG"
         title="Models"
-        description={`Every ${meta.label} model the tracker has observed, with context window and capabilities — polled every 30 minutes.`}
-        actions={<Badge variant="outline">Polled every 30 min</Badge>}
+        description={`Every ${meta.label} model the tracker has observed, with context window and capabilities${
+          cadence ? ` — polled ${cadence.long}` : ""
+        }.`}
+        actions={cadence ? <Badge variant="outline">{`Polled ${cadence.short}`}</Badge> : null}
       />
 
       <div className="space-y-6">
