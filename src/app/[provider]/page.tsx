@@ -11,7 +11,7 @@ import { notFound } from "next/navigation";
 import { ArrowUpRight, Boxes, Clock, Package, Terminal } from "lucide-react";
 import { tryGetDb } from "@/lib/db";
 import { cliReference, events, mcpServers, models } from "@/lib/db/schema";
-import { eventRecencyDesc } from "@/lib/db/order";
+import { eventRecencyDesc, isStableVersionSql } from "@/lib/db/order";
 import type { CliReference, Event, McpServer } from "@/lib/db/schema";
 import { listGuides } from "@/lib/content";
 import { CommandGrid } from "@/components/home/command-grid";
@@ -113,10 +113,15 @@ async function loadFeed(provider: Provider): Promise<ProviderFeed> {
           )
           .orderBy(desc(cliReference.firstSeenAt))
           .limit(48),
-        db.query.events.findFirst({
-          where: (e, { eq: eqQ }) => eqQ(e.source, pm.cliVersionSource),
-          orderBy: () => [eventRecencyDesc],
-        }),
+        // Newest STABLE release for the hero pill — a prerelease is not the
+        // version to tell a reader to be on. Falls back below when a tool has no
+        // stable release on record yet.
+        db
+          .select()
+          .from(events)
+          .where(sql`${events.source} = ${pm.cliVersionSource} and ${isStableVersionSql}`)
+          .orderBy(eventRecencyDesc)
+          .limit(1),
         db
           .select({ count: sql<number>`count(*)::int` })
           .from(models)
@@ -143,7 +148,7 @@ async function loadFeed(provider: Provider): Promise<ProviderFeed> {
     return {
       mcp: mcpRows,
       cliRef: cliRows,
-      latestCli: latestNpm?.title.replace(/^v/, "") ?? null,
+      latestCli: latestNpm[0]?.title.replace(/^v/, "") ?? null,
       modelCount: modelCountRow[0]?.count ?? 0,
       latestModel,
       news,

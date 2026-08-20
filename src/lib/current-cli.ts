@@ -9,7 +9,7 @@
 import { eq, sql } from "drizzle-orm";
 import { tryGetDb } from "@/lib/db";
 import { events } from "@/lib/db/schema";
-import { eventRecencyDesc } from "@/lib/db/order";
+import { eventRecencyDesc, isStableVersionSql } from "@/lib/db/order";
 import { DEFAULT_PROVIDER, type Provider } from "@/lib/providers";
 import { getProviderMeta } from "@/lib/provider-meta";
 
@@ -43,7 +43,7 @@ export async function getCurrentCliVersion(
     const stable = await db
       .select({ externalId: events.externalId })
       .from(events)
-      .where(sql`${events.source} = ${source} and ${events.externalId} ~ '^[0-9]+\.[0-9]+\.[0-9]+$'`)
+      .where(sql`${events.source} = ${source} and ${isStableVersionSql}`)
       .orderBy(eventRecencyDesc)
       .limit(1);
     if (stable[0]) {
