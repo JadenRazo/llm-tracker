@@ -180,23 +180,36 @@ jobs:
             done
           done
 
-      # Run each tier once, synchronously. Two jobs at once: it proves the new
+      # Run each tier once, synchronously. Three jobs at once: it proves the new
       # poller code actually executes in the VPC (a bundling mistake shows up
-      # here, not silently 30 minutes later), and it populates the rows the smoke
-      # test asserts on — EventBridge would not fire T2 for up to 30 minutes.
+      # here, not silently 30 minutes later); it populates the rows the smoke
+      # test asserts on (EventBridge would not fire T2 for up to 30 minutes); and
+      # it asserts the tier actually ran its whole source list.
+      #
+      # The payload is a REAL EventBridge Scheduler envelope, not `{}`. An empty
+      # payload hid a live defect: the envelope carries `"source":"aws.scheduler"`,
+      # the handler had a `source` single-source override, and every scheduled
+      # tick therefore ran one bogus "source" and skipped the tier. `{}` passed
+      # while the scheduled invocation was broken. Assert on the shape the
+      # scheduler actually sends.
       - name: Smoke-invoke each poller tier
         run: |
+          PAYLOAD='{"version":"0","id":"deploy-smoke","detail-type":"Scheduled Event","source":"aws.scheduler","account":"919651863281","time":"1970-01-01T00:00:00Z","region":"us-east-1","resources":[],"detail":"{}"}'
           for FN in ${POLLER_FUNCTIONS}; do
             OUT=$(mktemp)
             RESP=$(aws lambda invoke --function-name "${FN}" \
-              --cli-binary-format raw-in-base64-out --payload '{}' \
+              --cli-binary-format raw-in-base64-out --payload "${PAYLOAD}" \
               --query 'FunctionError' --output text "${OUT}")
-            echo "${FN}: ${RESP}"
-            cat "${OUT}"; echo
+            BODY=$(cat "${OUT}")
+            echo "${FN}: FunctionError=${RESP} ${BODY}"
             if [ "${RESP}" != "None" ]; then
               echo "::error::${FN} returned FunctionError=${RESP}"
               exit 1
             fi
+            ERRS=$(printf '%s' "${BODY}" | python3 -c 'import json,sys; print(json.load(sys.stdin)["err"])')
+            RAN=$(printf '%s' "${BODY}" | python3 -c 'import json,sys; print(len(json.load(sys.stdin)["sources"]))')
+            [ "${ERRS}" = "0" ] || { echo "::error::${FN} reported ${ERRS} failing source(s)"; exit 1; }
+            [ "${RAN}" -ge 5 ] || { echo "::error::${FN} ran only ${RAN} source(s) — the tier list was not used"; exit 1; }
           done
 
       # Invalidate the CDN so the new Cache-Control actually takes effect.

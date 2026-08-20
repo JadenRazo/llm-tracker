@@ -20,13 +20,22 @@
 // EventBridge owns the cadence.
 
 import { sourcesForTier, type SourceTier } from "@/lib/sources/registry";
-import { runSource, type SourceKey } from "./runner";
+import { isSourceKey, runSource, type SourceKey } from "./runner";
 
 interface PollerEvent {
   /** Optional override, mainly for a manual `aws lambda invoke` smoke test. */
   tier?: number;
-  /** Optional single-source override, same use case. */
-  source?: string;
+  /**
+   * Optional single-source override, same use case.
+   *
+   * Deliberately NOT named `source`: EventBridge and EventBridge Scheduler put
+   * their own `source` field in the event envelope (`"aws.scheduler"`), so a
+   * `source` override silently consumed it — every scheduled tick ran one
+   * "source" called `aws.scheduler`, failed with `unknown source`, and skipped
+   * the whole tier. Anything read off the event must be a name AWS does not
+   * already use, and must be validated before it reaches the runner.
+   */
+  sourceKey?: string;
 }
 
 export interface PollerResult {
@@ -38,7 +47,9 @@ export interface PollerResult {
 }
 
 function resolveTier(event: PollerEvent | undefined): SourceTier {
-  const raw = event?.tier ?? Number(process.env.TIER);
+  // Only an explicitly numeric `tier` overrides the env var — an AWS event
+  // envelope must never be able to steer this by accident.
+  const raw = typeof event?.tier === "number" ? event.tier : Number(process.env.TIER);
   if (raw === 1 || raw === 2 || raw === 3) return raw;
   throw new Error(
     `poller: TIER must be 1, 2 or 3 (got ${JSON.stringify(process.env.TIER)}); refusing to guess`,
@@ -48,9 +59,17 @@ function resolveTier(event: PollerEvent | undefined): SourceTier {
 export async function handler(event?: PollerEvent): Promise<PollerResult> {
   const tier = resolveTier(event);
 
-  const keys: SourceKey[] = event?.source
-    ? [event.source as SourceKey]
-    : sourcesForTier(tier).map((d) => d.key);
+  let keys: SourceKey[];
+  if (typeof event?.sourceKey === "string") {
+    if (!isSourceKey(event.sourceKey)) {
+      throw new Error(
+        `poller: unknown sourceKey ${JSON.stringify(event.sourceKey)} — refusing to run`,
+      );
+    }
+    keys = [event.sourceKey];
+  } else {
+    keys = sourcesForTier(tier).map((d) => d.key);
+  }
 
   const startedAt = Date.now();
   // eslint-disable-next-line no-console
