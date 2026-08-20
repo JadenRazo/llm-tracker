@@ -113,11 +113,16 @@ jobs:
         env:
           SHA: ${{ steps.sha.outputs.sha }}
         run: |
+          # >/dev/null is load-bearing: update-function-code returns the whole
+          # FunctionConfiguration, environment variables included, and the runner
+          # does not mask ADMIN_TOKEN. Without this the deploy log prints a live
+          # credential. The poller update below discards its output for the same
+          # reason.
           aws lambda update-function-code \
             --function-name "${FUNCTION_NAME}" \
             --image-uri "${ECR_IMAGE}:${SHA}" \
             --architectures arm64 \
-            --no-cli-pager
+            --no-cli-pager >/dev/null
 
       - name: Wait for Lambda update to succeed
         run: |
