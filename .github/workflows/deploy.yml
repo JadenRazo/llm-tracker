@@ -206,10 +206,7 @@ jobs:
               echo "::error::${FN} returned FunctionError=${RESP}"
               exit 1
             fi
-            ERRS=$(printf '%s' "${BODY}" | python3 -c 'import json,sys; print(json.load(sys.stdin)["err"])')
-            RAN=$(printf '%s' "${BODY}" | python3 -c 'import json,sys; print(len(json.load(sys.stdin)["sources"]))')
-            [ "${ERRS}" = "0" ] || { echo "::error::${FN} reported ${ERRS} failing source(s)"; exit 1; }
-            [ "${RAN}" -ge 5 ] || { echo "::error::${FN} ran only ${RAN} source(s) — the tier list was not used"; exit 1; }
+            node scripts/assert-poller-invoke.mjs "${FN}" "${OUT}"
           done
 
       # Invalidate the CDN so the new Cache-Control actually takes effect.
