@@ -90,12 +90,20 @@ not work.
 
 ### AWS resource names
 
-The AWS resource names still contain `claude-tracker`. That is deliberate:
-Lambda functions, ECR repositories, and S3 buckets cannot be renamed in place,
-and the strings are invisible to users. **The deploy role's OIDC trust policy is
-pinned to `repo:JadenRazo/claude-tracker:ref:refs/heads/main` — renaming the
-GitHub repository without updating that trust policy first will break every
-deploy.**
+The AWS resource names still contain `claude-tracker`, even though the GitHub
+repository was renamed to `llm-tracker` on 2026-08-20. That is deliberate: Lambda
+functions, ECR repositories, S3 buckets and IAM roles cannot be renamed in place,
+so changing them means destroying and recreating roughly eighteen live resources
+with downtime, for strings no user ever sees. They are managed by Terraform in
+`JadenRazo/aws-infra` (`phase-e-claude-tracker.tf`); rename them there or not at
+all.
+
+**The deploy role's OIDC trust policy pins
+`token.actions.githubusercontent.com:sub` to
+`repo:JadenRazo/llm-tracker:ref:refs/heads/main`. Renaming this repository again
+without widening that trust policy first will break every deploy** — the token
+GitHub mints carries the new repo name, and the role will refuse it. Widen the
+policy to accept both names, rename, verify a deploy, then tighten it back.
 
 ### Rendering contract — do not reintroduce ISR here
 
