@@ -19,6 +19,8 @@
 // docker-compose path and stays as it is; on Lambda `DISABLE_CRON=1` and
 // EventBridge owns the cadence.
 
+import { sql } from "drizzle-orm";
+import { getDb } from "@/lib/db";
 import { sourcesForTier, type SourceTier } from "@/lib/sources/registry";
 import { isSourceKey, runSource, type SourceKey } from "./runner";
 
@@ -129,6 +131,29 @@ export async function handler(event?: PollerEvent): Promise<PollerResult> {
       err++;
       // eslint-disable-next-line no-console
       console.error(JSON.stringify({ level: "error", tier, error: String(entry.reason) }));
+    }
+  }
+
+  // poller_runs retention. One row lands per source per attempt (~2.6k/day) and
+  // nothing else ever deleted them — at 211k rows the table's unbounded growth
+  // is what pushed the health probe's per-request query to 625 ms. Tier 3 (the
+  // 2h cadence) trims anything older than 30 days: /api/health looks back 24h
+  // and conditional-fetch only wants the latest ok/unchanged row per source, so
+  // 30 days is generous. Best-effort — a failed trim must not fail the tier.
+  if (tier === 3 && typeof event?.sourceKey !== "string") {
+    try {
+      const trimmed = await getDb().execute(
+        sql`delete from poller_runs where started_at < now() - interval '30 days'`,
+      );
+      // eslint-disable-next-line no-console
+      console.log(
+        JSON.stringify({ level: "info", msg: "poller_runs retention", tier, deleted: trimmed.rowCount ?? 0 }),
+      );
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.error(
+        JSON.stringify({ level: "error", msg: "poller_runs retention failed", tier, error: String(e) }),
+      );
     }
   }
 

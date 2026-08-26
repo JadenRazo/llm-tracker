@@ -48,11 +48,33 @@ export async function GET(): Promise<NextResponse> {
   }
 
   try {
-    // Latest run per source, in one round trip.
+    // Latest run per registry source, in one round trip.
+    //
+    // Deliberately NOT `select distinct on (source) … order by source, started_at desc`:
+    // that ORDER BY mixes directions (source ASC, started_at DESC), which the
+    // (source ASC, started_at ASC) index cannot serve, so Postgres seq-scanned and
+    // quicksorted the whole table — 625 ms at 211k rows, on every probe, and the
+    // Route53 health check probes this route every ~2 s. Driving the lookup from
+    // the registry keys instead makes it ~28 single-direction index probes (~2 ms),
+    // flat in table size. Sources that leave the registry drop out of `failing`,
+    // which matches `neverRan` already being registry-driven.
+    //
+    // `array[…]` is built with sql.join because drizzle expands a bare JS-array
+    // param into a `($1, $2, …)` record, which cannot cast to text[].
+    const registryKeys = sql.join(
+      SOURCE_REGISTRY.map((d) => sql`${d.key}`),
+      sql`, `,
+    );
     const latest = await db.execute<SourceState>(sql`
-      select distinct on (source) source, status, started_at as "startedAt"
-      from poller_runs
-      order by source, started_at desc
+      select s.key as source, r.status, r.started_at as "startedAt"
+      from unnest(array[${registryKeys}]::text[]) as s(key)
+      cross join lateral (
+        select status, started_at
+        from poller_runs
+        where source = s.key
+        order by started_at desc
+        limit 1
+      ) r
     `);
     const rows = (latest.rows ?? []) as unknown as SourceState[];
 
