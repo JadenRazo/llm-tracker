@@ -25,7 +25,10 @@ import type { SourceDescriptor } from "@/lib/sources/registry";
 
 const SOURCE_KEY = "anthropic_models";
 const PROVIDER: Provider = "claude";
-const MODELS_URL = "https://platform.claude.com/docs/en/about-claude/models/overview";
+// 2026-08-26: the docs moved from /docs/en/about-claude/models/overview (the old
+// path 301s here). Fetch the canonical URL directly so we don't depend on the
+// redirect surviving the next docs reshuffle.
+const MODELS_URL = "https://platform.claude.com/docs/en/models/overview";
 
 interface ParsedModel {
   id: string;
@@ -65,7 +68,10 @@ function isYes(raw: string): boolean {
   return /^\s*yes\b/i.test(raw);
 }
 
-function parseModelsTable(html: string): ParsedModel[] {
+// Exported so the parser can be verified ad hoc against a saved copy of the
+// live page (there is no test framework in this repo; the runtime
+// throw-on-zero below is the standing guard against upstream markup drift).
+export function parseModelsTable(html: string): ParsedModel[] {
   const $ = cheerio.load(html);
   const table = $("table").first();
   if (table.length === 0) return [];
@@ -74,10 +80,16 @@ function parseModelsTable(html: string): ParsedModel[] {
   if (headerCells.length < 2) return [];
 
   // headerCells[0] is the "Feature" label; the rest are model display names.
+  // 2026-08-24 markup: each header cell now stacks the model name (an <a>) on a
+  // tagline <span>, so bare .text() concatenates both ("Claude Fable 5Next-
+  // generation intelligence…"). Prefer the link text; fall back to full text
+  // for the pre-08-24 plain-text shape.
   const displayNames: string[] = [];
   headerCells.each((i, el) => {
     if (i === 0) return;
-    displayNames.push($(el).text().trim());
+    const link = $(el).find("a").first();
+    const name = (link.length > 0 ? link.text() : $(el).text()).trim();
+    displayNames.push(name);
   });
 
   // Seed parsed records — id will be filled in from the "Claude API ID" row.
@@ -92,16 +104,38 @@ function parseModelsTable(html: string): ParsedModel[] {
   }));
 
   table.find("tbody tr").each((_, tr) => {
+    // 2026-08-24 markup: the feature label moved from the row's first <td> into
+    // a row-scoped <th> (<tr><th>Pricing</th><td>…</td>×N</tr>), which is what
+    // silently zeroed this parser — every <td> became a "value" and no label
+    // ever matched. Handle both shapes: th-labeled rows use every <td> as a
+    // value; the legacy shape keeps first-<td>-is-label.
+    const rowTh = $(tr).find("th").first();
     const cells = $(tr).find("td");
-    if (cells.length < 2) return;
-    // Strip trailing footnote markers ("Pricing1", "Reliable knowledge cutoff 2")
-    // that cheerio concatenates into the label text.
-    const label = $(cells[0]!).text().trim().replace(/\s*\d+$/, "").trim();
+    let rawLabel: string;
     const values: string[] = [];
-    cells.each((i, el) => {
-      if (i === 0) return;
-      values.push($(el).text().trim());
-    });
+    if (rowTh.length > 0) {
+      rawLabel = rowTh.text();
+      cells.each((_i, el) => {
+        values.push($(el).text().trim());
+      });
+    } else {
+      if (cells.length < 2) return;
+      rawLabel = $(cells[0]!).text();
+      cells.each((i, el) => {
+        if (i === 0) return;
+        values.push($(el).text().trim());
+      });
+    }
+    if (values.length === 0) return;
+    // Sanitize the label: the docs render tooltip icons as PRIVATE-USE-AREA
+    // glyphs from an icon font ("Claude API ID<U+E08F>"), which .trim() does not
+    // touch and which broke every === comparison in the 2026-08-24 markup. Also
+    // strip trailing footnote markers ("Pricing1") that cheerio concatenates in.
+    const label = rawLabel
+      .replace(/[\u{E000}-\u{F8FF}\u{F0000}-\u{FFFFD}\u{100000}-\u{10FFFD}]/gu, "")
+      .trim()
+      .replace(/\s*\d+$/, "")
+      .trim();
 
     for (let i = 0; i < parsed.length && i < values.length; i++) {
       const v = values[i]!;
@@ -113,6 +147,12 @@ function parseModelsTable(html: string): ParsedModel[] {
         const p = parsePricing(v);
         rec.pricingIn = p.pricingIn;
         rec.pricingOut = p.pricingOut;
+      } else if (label === "Thinking") {
+        // 2026-08-24: the separate Extended/Adaptive yes-no rows collapsed into
+        // one "Thinking" row whose value names the mode ("Adaptive (always
+        // on)", "Adaptive", "Extended").
+        rec.capabilities.adaptiveThinking = /adaptive/i.test(v);
+        rec.capabilities.extendedThinking = /extended/i.test(v);
       } else if (label === "Extended thinking") rec.capabilities.extendedThinking = isYes(v);
       else if (label === "Adaptive thinking") rec.capabilities.adaptiveThinking = isYes(v);
       else if (label === "Priority Tier") rec.capabilities.priorityTier = isYes(v);
