@@ -140,3 +140,50 @@ test('missing database is never negatively cached by either reader', async () =>
   assert.equal(await getCurrentCliVersion(), '3.0.0');
   assert.equal(database.queries.length, 2);
 });
+
+for (const kind of ['index', 'version'] as const) {
+  const lookup = () => kind === 'index'
+    ? resolveDocToken('--print').then((value) => value?.id)
+    : getCurrentCliVersion();
+  const result = (version: string) => kind === 'index'
+    ? [{ ...row('claude'), id: version }]
+    : [{ externalId: version }];
+
+  test(`${kind}: a stalled read does not block a later healthy request or overwrite its cache`, async () => {
+    const oldQuery = deferred<unknown[]>();
+    database.read = () => oldQuery.promise;
+    const oldRead = lookup();
+    await tick();
+    now += 5_001;
+    database.read = async () => result('new');
+    const healthyRead = lookup();
+    await tick();
+    const count = database.queries.length;
+    oldQuery.resolve(result('old'));
+    assert.equal(await healthyRead, 'new');
+    assert.equal(await oldRead, 'old');
+    assert.equal(await lookup(), 'new');
+    assert.equal(count, 2);
+    assert.equal(database.queries.length, 2);
+  });
+
+  test(`${kind}: an obsolete read cannot remove its replacement pending entry`, async () => {
+    const oldQuery = deferred<unknown[]>();
+    const newQuery = deferred<unknown[]>();
+    database.read = () => oldQuery.promise;
+    const oldRead = lookup();
+    await tick();
+    now += 5_001;
+    database.read = () => newQuery.promise;
+    const newRead = lookup();
+    await tick();
+    oldQuery.reject(new Error('late failure'));
+    await oldRead;
+    const overlappingRead = lookup();
+    await tick();
+    const count = database.queries.length;
+    newQuery.resolve(result('new'));
+    assert.deepEqual(await Promise.all([newRead, overlappingRead]), ['new', 'new']);
+    assert.equal(count, 2);
+  });
+}

@@ -14,9 +14,11 @@ import { DEFAULT_PROVIDER, type Provider } from "@/lib/providers";
 import { getProviderMeta } from "@/lib/provider-meta";
 
 const CACHE_TTL_MS = 5 * 60 * 1000;
+// Share short read bursts; a later request must be able to retry a stalled query.
+const SHARED_READ_WINDOW_MS = 5_000;
 
 const cache = new Map<Provider, { value: string | null; expiresAt: number }>();
-const pending = new Map<Provider, Promise<string | null>>();
+const pending = new Map<Provider, { request: Promise<string | null>; expiresAt: number }>();
 
 /**
  * Latest CLI version string for `provider`, read from that provider's npm
@@ -32,17 +34,17 @@ export async function getCurrentCliVersion(
   // Overlapping cold renders share the lookup, including its fallback query.
   // Completed values retain the same TTL; a failed lookup remains retryable.
   const active = pending.get(provider);
-  if (active) return active;
-  const request = loadCurrentCliVersion(provider, now);
-  pending.set(provider, request);
+  if (active && active.expiresAt > now) return active.request;
+  const request = loadCurrentCliVersion(provider, now, () => pending.get(provider)?.request === request);
+  pending.set(provider, { request, expiresAt: now + SHARED_READ_WINDOW_MS });
   try {
     return await request;
   } finally {
-    pending.delete(provider);
+    if (pending.get(provider)?.request === request) pending.delete(provider);
   }
 }
 
-async function loadCurrentCliVersion(provider: Provider, now: number): Promise<string | null> {
+async function loadCurrentCliVersion(provider: Provider, now: number, isCurrent: () => boolean): Promise<string | null> {
   const db = tryGetDb();
   if (!db) return null;
 
@@ -62,7 +64,7 @@ async function loadCurrentCliVersion(provider: Provider, now: number): Promise<s
       .orderBy(eventRecencyDesc)
       .limit(1);
     if (stable[0]) {
-      cache.set(provider, { value: stable[0].externalId, expiresAt: now + CACHE_TTL_MS });
+      if (isCurrent()) cache.set(provider, { value: stable[0].externalId, expiresAt: now + CACHE_TTL_MS });
       return stable[0].externalId;
     }
 
@@ -75,7 +77,7 @@ async function loadCurrentCliVersion(provider: Provider, now: number): Promise<s
       .orderBy(eventRecencyDesc)
       .limit(1);
     const value = rows[0]?.externalId ?? null;
-    cache.set(provider, { value, expiresAt: now + CACHE_TTL_MS });
+    if (isCurrent()) cache.set(provider, { value, expiresAt: now + CACHE_TTL_MS });
     return value;
   } catch {
     // Don't cache failures — next render retries.
