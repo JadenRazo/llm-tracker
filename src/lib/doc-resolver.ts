@@ -33,6 +33,7 @@ interface DocIndex {
 // One cache slot per provider — keyed so a Claude render and an OpenAI render
 // don't fight over a single shared index.
 const cache = new Map<Provider, { index: DocIndex; expiresAt: number }>();
+const pending = new Map<Provider, Promise<DocIndex | null>>();
 
 function aliasesOf(row: CliReference): string[] {
   const raw = (row.metadata as Record<string, unknown> | null)?.aliases;
@@ -83,6 +84,20 @@ async function getIndex(provider: Provider): Promise<DocIndex | null> {
   const hit = cache.get(provider);
   if (hit && hit.expiresAt > now) return hit.index;
 
+  // A guide resolves many inline tokens at once. Share only the active read;
+  // keep the existing TTL and retry failures on the next render.
+  const active = pending.get(provider);
+  if (active) return active;
+  const request = loadIndex(provider, now);
+  pending.set(provider, request);
+  try {
+    return await request;
+  } finally {
+    pending.delete(provider);
+  }
+}
+
+async function loadIndex(provider: Provider, now: number): Promise<DocIndex | null> {
   const db = tryGetDb();
   if (!db) return null;
 

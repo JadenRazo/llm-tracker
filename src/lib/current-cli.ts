@@ -16,6 +16,7 @@ import { getProviderMeta } from "@/lib/provider-meta";
 const CACHE_TTL_MS = 5 * 60 * 1000;
 
 const cache = new Map<Provider, { value: string | null; expiresAt: number }>();
+const pending = new Map<Provider, Promise<string | null>>();
 
 /**
  * Latest CLI version string for `provider`, read from that provider's npm
@@ -28,6 +29,20 @@ export async function getCurrentCliVersion(
   const hit = cache.get(provider);
   if (hit && hit.expiresAt > now) return hit.value;
 
+  // Overlapping cold renders share the lookup, including its fallback query.
+  // Completed values retain the same TTL; a failed lookup remains retryable.
+  const active = pending.get(provider);
+  if (active) return active;
+  const request = loadCurrentCliVersion(provider, now);
+  pending.set(provider, request);
+  try {
+    return await request;
+  } finally {
+    pending.delete(provider);
+  }
+}
+
+async function loadCurrentCliVersion(provider: Provider, now: number): Promise<string | null> {
   const db = tryGetDb();
   if (!db) return null;
 
