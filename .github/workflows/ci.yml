@@ -42,6 +42,9 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      - name: Read concurrency regressions
+        run: npm run test:reads
+
       # No DATABASE_URL on purpose — the build must not need VPC access to the
       # production database. That is exactly why the next step exists: with no
       # DATABASE_URL, anything prerendered here is prerendered EMPTY.

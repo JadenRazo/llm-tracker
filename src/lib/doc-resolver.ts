@@ -19,6 +19,8 @@ import type { CliReference } from "@/lib/db/schema";
 import { DEFAULT_PROVIDER, type Provider } from "@/lib/providers";
 
 const CACHE_TTL_MS = 5 * 60 * 1000;
+// Share short read bursts; a later request must be able to retry a stalled query.
+const SHARED_READ_WINDOW_MS = 5_000;
 const DOCS_HOST = "code.claude.com";
 
 interface DocIndex {
@@ -33,6 +35,7 @@ interface DocIndex {
 // One cache slot per provider — keyed so a Claude render and an OpenAI render
 // don't fight over a single shared index.
 const cache = new Map<Provider, { index: DocIndex; expiresAt: number }>();
+const pending = new Map<Provider, { request: Promise<DocIndex | null>; expiresAt: number }>();
 
 function aliasesOf(row: CliReference): string[] {
   const raw = (row.metadata as Record<string, unknown> | null)?.aliases;
@@ -83,6 +86,20 @@ async function getIndex(provider: Provider): Promise<DocIndex | null> {
   const hit = cache.get(provider);
   if (hit && hit.expiresAt > now) return hit.index;
 
+  // A guide resolves many inline tokens at once. Share only the active read;
+  // keep the existing TTL and retry failures on the next render.
+  const active = pending.get(provider);
+  if (active && active.expiresAt > now) return active.request;
+  const request = loadIndex(provider, now, () => pending.get(provider)?.request === request);
+  pending.set(provider, { request, expiresAt: now + SHARED_READ_WINDOW_MS });
+  try {
+    return await request;
+  } finally {
+    if (pending.get(provider)?.request === request) pending.delete(provider);
+  }
+}
+
+async function loadIndex(provider: Provider, now: number, isCurrent: () => boolean): Promise<DocIndex | null> {
   const db = tryGetDb();
   if (!db) return null;
 
@@ -95,7 +112,7 @@ async function getIndex(provider: Provider): Promise<DocIndex | null> {
       .from(cliReference)
       .where(eq(cliReference.provider, provider));
     const index = buildIndex(rows);
-    cache.set(provider, { index, expiresAt: now + CACHE_TTL_MS });
+    if (isCurrent()) cache.set(provider, { index, expiresAt: now + CACHE_TTL_MS });
     return index;
   } catch {
     // Don't cache failures — next render retries.
