@@ -4,13 +4,14 @@
 // iterating on a source module — the cron scheduler owns the production polling
 // cadence, this endpoint is not for scheduled use.
 //
-// Guarded by two independent checks:
-//   1. X-Admin-Token header must match env.ADMIN_TOKEN
-//   2. Request must originate from loopback (127.0.0.1 / ::1 via x-forwarded-for or remote addr)
+// Disabled unless NODE_ENV is exactly development. The development path also
+// requires X-Admin-Token and checks the forwarded address. The forwarded header
+// check alone is not a trusted production network boundary.
 
 import { NextResponse, type NextRequest } from "next/server";
 import { env } from "@/lib/env";
 import { isSourceKey, runSource } from "@/lib/poller/runner";
+import { developmentAdminEnabled } from "@/lib/admin-mode.mjs";
 
 export const runtime = "nodejs";
 // Intentionally NOT cached: POST-only admin trigger with side effects —
@@ -33,6 +34,10 @@ function isLoopback(req: NextRequest): boolean {
 }
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
+  // Scheduled production pollers use their own IAM-authorized Lambda entry.
+  if (!developmentAdminEnabled(process.env.NODE_ENV)) {
+    return NextResponse.json({ error: "not found" }, { status: 404, headers: { "Cache-Control": "no-store" } });
+  }
   const expected = env().ADMIN_TOKEN;
   if (!expected) {
     return NextResponse.json({ ok: false, error: "ADMIN_TOKEN not configured" }, { status: 503 });
