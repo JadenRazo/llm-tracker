@@ -22,13 +22,13 @@ export function SectionHeading({
   className,
 }: SectionHeadingProps) {
   return (
-    <div className={clsx("mb-4 flex items-end justify-between gap-4", className)}>
+    <div className={clsx("mb-4 flex flex-wrap items-end justify-between gap-3", className)}>
       <div className="min-w-0">
         {eyebrow ? (
           <p className="text-meta text-[var(--color-text-muted)]">{eyebrow}</p>
         ) : null}
         <div className="flex items-baseline gap-3">
-          <h2 className="text-display-md text-[var(--color-text-primary)]">{title}</h2>
+          <h2 className="!font-sans text-xl font-semibold tracking-tight text-[var(--color-text-primary)]">{title}</h2>
           {count !== undefined && count !== null ? (
             <span className="inline-flex items-center rounded-md bg-[var(--color-surface-raised)] px-2 py-0.5 text-meta text-[var(--color-text-secondary)]">
               {count}
@@ -36,7 +36,7 @@ export function SectionHeading({
           ) : null}
         </div>
       </div>
-      {action ? <div className="shrink-0">{action}</div> : null}
+      {action ? <div className="min-w-0">{action}</div> : null}
     </div>
   );
 }

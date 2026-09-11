@@ -1,11 +1,10 @@
-import { Terminal } from "lucide-react";
+"use client";
+
+import { useState } from "react";
+import { Search, Terminal, X } from "lucide-react";
 import type { CliReference } from "@/lib/db/schema";
 import { EmptyState } from "@/components/ui/empty-state";
 import { CliReferenceChip } from "@/components/home/cli-reference-chip";
-
-interface CommandGridProps {
-  items: CliReference[];
-}
 
 const KIND_LABEL: Record<string, string> = {
   slash: "Slash commands",
@@ -14,61 +13,108 @@ const KIND_LABEL: Record<string, string> = {
   "hook-event": "Hook events",
   skill: "Skills",
 };
+const KIND_ORDER = ["slash", "flag", "cli-subcommand", "hook-event", "skill"];
 
-const NEW_THRESHOLD_DAYS = 90;
-
-function isNew(row: CliReference): boolean {
-  if (!row.firstSeenAt) return false;
-  if (row.deprecatedAt) return false;
-  const age = Date.now() - row.firstSeenAt.getTime();
-  return age < NEW_THRESHOLD_DAYS * 24 * 60 * 60 * 1000;
-}
-
-/**
- * Grid of slash commands / flags / subcommands / hook events grouped by kind.
- * Each chip is a popover trigger that explains the token in place; the docs
- * link is offered inside the popover rather than as the chip's primary action.
- */
-export function CommandGrid({ items }: CommandGridProps) {
-  if (items.length === 0) {
+export function CommandGrid({ items }: { items: CliReference[] }) {
+  const [query, setQuery] = useState("");
+  const [kind, setKind] = useState("all");
+  if (!items.length)
     return (
       <EmptyState
         icon={Terminal}
-        title="Poller warming up"
-        description="The Claude Code reference scraper runs every 30 minutes. First population happens ~20 seconds after deploy."
+        title="No commands recorded yet"
+        description="The command reference will appear here when source data is available."
       />
     );
-  }
-
-  const groups = new Map<string, CliReference[]>();
-  for (const row of items) {
-    const bucket = groups.get(row.kind) ?? [];
-    bucket.push(row);
-    groups.set(row.kind, bucket);
-  }
-
-  const kindOrder = ["slash", "flag", "cli-subcommand", "hook-event", "skill"];
-  const orderedKinds = [...groups.keys()].sort(
-    (a, b) => (kindOrder.indexOf(a) + 99) - (kindOrder.indexOf(b) + 99),
+  const kinds = [...new Set(items.map((item) => item.kind))].sort(
+    (a, b) => KIND_ORDER.indexOf(a) - KIND_ORDER.indexOf(b),
   );
-
+  const needle = query.trim().toLocaleLowerCase();
+  const filtered = items.filter(
+    (item) =>
+      (kind === "all" || kind === item.kind) &&
+      `${item.name} ${item.description ?? ""} ${item.usage ?? ""}`
+        .toLocaleLowerCase()
+        .includes(needle),
+  );
   return (
-    <div className="space-y-8">
-      {orderedKinds.map((kind) => {
-        const rows = groups.get(kind)!;
-        return (
-          <section key={kind}>
-            <h3 className="mb-3 text-meta text-[var(--color-text-muted)]">
-              {KIND_LABEL[kind] ?? kind} · {rows.length}
-            </h3>
-            <div className="flex flex-wrap gap-2">
-              {rows.map((row) => (
-                <CliReferenceChip key={row.id} item={row} fresh={isNew(row)} />
-              ))}
-            </div>
-          </section>
-        );
-      })}
+    <div>
+      <div className="feed-tools mb-3">
+        <div className="search-field">
+          <Search size={17} aria-hidden />
+          <input
+            aria-label="Search commands"
+            type="search"
+            placeholder="Search commands, flags, or what you want to do…"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+          />
+          {query ? (
+            <button
+              type="button"
+              aria-label="Clear command search"
+              onClick={() => setQuery("")}
+            >
+              <X size={16} aria-hidden />
+            </button>
+          ) : null}
+        </div>
+        <select
+          className="filter-select"
+          aria-label="Command type"
+          value={kind}
+          onChange={(event) => setKind(event.target.value)}
+        >
+          <option value="all">All commands</option>
+          {kinds.map((key) => (
+            <option key={key} value={key}>
+              {KIND_LABEL[key] ?? key}
+            </option>
+          ))}
+        </select>
+      </div>
+      <p
+        className="mb-5 text-ui-sm text-[var(--color-text-muted)]"
+        role="status"
+        aria-live="polite"
+      >
+        {filtered.length} of {items.length} commands
+      </p>
+      {filtered.length ? (
+        <div className="command-groups">
+          {kinds.map((key) => {
+            const rows = filtered.filter((item) => item.kind === key);
+            return rows.length ? (
+              <section key={key}>
+                <h3 className="mb-3 font-sans text-ui-sm font-medium text-[var(--color-text-muted)]">
+                  {KIND_LABEL[key] ?? key}{" "}
+                  <span className="ml-1">{rows.length}</span>
+                </h3>
+                <div className="flex flex-wrap gap-2">
+                  {rows.map((item) => (
+                    <CliReferenceChip key={item.id} item={item} />
+                  ))}
+                </div>
+              </section>
+            ) : null;
+          })}
+        </div>
+      ) : (
+        <div className="filter-empty">
+          <h3>No matching commands</h3>
+          <p>Try a different search or command type.</p>
+          <button
+            className="action-link"
+            type="button"
+            onClick={() => {
+              setQuery("");
+              setKind("all");
+            }}
+          >
+            Reset filters
+          </button>
+        </div>
+      )}
     </div>
   );
 }

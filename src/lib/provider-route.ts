@@ -34,8 +34,20 @@ export function swapProviderInPath(
 ): string {
   const segments = pathname.split("/").filter(Boolean);
   if (segments.length > 0 && isProvider(segments[0])) {
+    if (segments[0] === target) return pathname;
     segments[0] = target;
+    // Article slugs belong to one provider; switch to the equivalent section.
+    if (segments.length > 2 && (segments[1] === "tips" || segments[1] === "guides")) {
+      return `/${segments.slice(0, 2).join("/")}`;
+    }
     return `/${segments.join("/")}`;
   }
   return `/${target}`;
+}
+
+/** Provider home matches exactly; section links also own their detail pages. */
+export function isSectionActive(pathname: string, provider: Provider, suffix: string): boolean {
+  const path = pathname.replace(/\/+$/, "") || "/";
+  const href = `/${provider}${suffix}`;
+  return path === href || (suffix !== "" && path.startsWith(`${href}/`));
 }

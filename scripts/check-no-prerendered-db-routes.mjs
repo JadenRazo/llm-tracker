@@ -25,6 +25,9 @@ const manifestPath = path.join(root, ".next/prerender-manifest.json");
  */
 const ALLOWED = [
   /^\/_not-found$/,
+  // Source-owned metadata assets contain no database reads.
+  /^\/icon\.svg$/,
+  /^\/opengraph-image$/,
   // Concrete paths from `routes`.
   /^\/(claude|openai|gemini)\/(tips|guides)$/,
   /^\/(claude|openai|gemini)\/(tips|guides)\/[^/]+$/,

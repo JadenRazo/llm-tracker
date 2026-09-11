@@ -11,8 +11,8 @@ export function DataUnavailable({ what }: { what: string }) {
     <EmptyState
       icon={CloudOff}
       title={`${what} is temporarily unavailable`}
-      description="The tracker could not reach its database for this request. Ingest keeps running in the background; reload in a moment."
-      hint="This is an outage on our side, not an empty catalog."
+      description="We couldn’t load this data. Please reload in a moment, or use the provider links to reach the original sources."
+      hint="Previously recorded data may still exist."
     />
   );
 }

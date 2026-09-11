@@ -45,6 +45,9 @@ jobs:
       - name: Read concurrency regressions
         run: npm run test:reads
 
+      - name: Navigation, activity, and catalog regressions
+        run: npm run test:ui
+
       # No DATABASE_URL on purpose — the build must not need VPC access to the
       # production database. That is exactly why the next step exists: with no
       # DATABASE_URL, anything prerendered here is prerendered EMPTY.

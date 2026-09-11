@@ -10,7 +10,7 @@
 import { desc, eq } from "drizzle-orm";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { Boxes, Clock, Database } from "lucide-react";
+import { Boxes } from "lucide-react";
 import { tryGetDb } from "@/lib/db";
 import { models } from "@/lib/db/schema";
 import type { Model } from "@/lib/db/schema";
@@ -21,7 +21,6 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { DataUnavailable } from "@/components/ui/data-unavailable";
 import type { LoadResult } from "@/lib/load-result";
 import { PageHeader } from "@/components/ui/page-header";
-import { Stat } from "@/components/ui/stat";
 import { PROVIDERS, type Provider } from "@/lib/providers";
 import { parseProviderParam } from "@/lib/provider-route";
 import { getProviderMeta } from "@/lib/provider-meta";
@@ -70,22 +69,6 @@ async function loadModels(provider: Provider): Promise<LoadResult<Model>> {
   }
 }
 
-function formatContext(n: number | null): string {
-  if (!n) return "—";
-  if (n >= 1_000_000) return `${Math.round(n / 1_000_000)}M`;
-  if (n >= 1_000) return `${Math.round(n / 1_000)}K`;
-  return n.toString();
-}
-
-function daysAgo(date: Date | null): string {
-  if (!date) return "—";
-  const diffMs = Date.now() - date.getTime();
-  const diffDays = Math.max(0, Math.round(diffMs / (24 * 60 * 60 * 1000)));
-  if (diffDays === 0) return "today";
-  if (diffDays === 1) return "1 day ago";
-  return `${diffDays} days ago`;
-}
-
 export default async function ModelsPage({ params }: PageProps) {
   const { provider: raw } = await params;
   const provider = parseProviderParam(raw);
@@ -98,28 +81,18 @@ export default async function ModelsPage({ params }: PageProps) {
   const result = await loadModels(provider);
   const rows = result ?? [];
 
-  const largestContext = rows.reduce<number | null>((acc, m) => {
-    if (m.contextWindow === null || m.contextWindow === undefined) return acc;
-    if (acc === null || m.contextWindow > acc) return m.contextWindow;
-    return acc;
-  }, null);
-
-  const newestFirstSeen = rows.reduce<Date | null>((acc, m) => {
-    if (!m.firstSeenAt) return acc;
-    if (!acc || m.firstSeenAt.getTime() > acc.getTime()) return m.firstSeenAt;
-    return acc;
-  }, null);
-
   return (
     <Container>
       <PageHeader
         icon={Boxes}
-        eyebrow="CATALOG"
-        title="Models"
-        description={`Every ${meta.label} model the tracker has observed, with context window and capabilities${
-          cadence ? ` — polled ${cadence.long}` : ""
-        }.`}
-        actions={cadence ? <Badge variant="outline">{`Polled ${cadence.short}`}</Badge> : null}
+        eyebrow={`${meta.label} / Catalog`}
+        title={`${meta.label} models`}
+        description="Search by name or documented capability, then sort by context size. Copy the exact model ID for your next project."
+        actions={
+          cadence ? (
+            <Badge variant="outline">{`Polled ${cadence.short}`}</Badge>
+          ) : null
+        }
       />
 
       <div className="space-y-6">
@@ -127,28 +100,13 @@ export default async function ModelsPage({ params }: PageProps) {
           <DataUnavailable what="The model catalog" />
         ) : rows.length > 0 ? (
           <>
-            <section className="grid grid-cols-1 gap-4 animate-in sm:grid-cols-3">
-              <Stat
-                icon={Boxes}
-                label="Models in catalog"
-                value={rows.length}
-                hint={`tracked for ${meta.label}`}
-              />
-              <Stat
-                icon={Database}
-                label="Largest context"
-                value={formatContext(largestContext)}
-                hint="tokens per request"
-              />
-              <Stat
-                icon={Clock}
-                label="Newest addition"
-                value={daysAgo(newestFirstSeen)}
-                hint="by first-seen date"
-              />
-            </section>
             <section className="animate-in">
-              <ModelTable models={rows} />
+              <ModelTable key={provider} models={rows} />
+              <p className="mt-5 max-w-3xl text-ui-md leading-relaxed text-[var(--color-text-muted)]">
+                Capabilities reflect the provider’s documented data. Missing
+                details mean unknown, not unsupported. “First tracked” is when
+                this tracker recorded the model, not its release date.
+              </p>
             </section>
           </>
         ) : (
@@ -161,7 +119,7 @@ export default async function ModelsPage({ params }: PageProps) {
             }
             description={
               meta.modelsSource
-                ? `The tracker polls a ${meta.label} model catalog every 30 minutes but has no rows yet. If this persists, the ${meta.modelsSource} source is failing.`
+                ? `No models are recorded for ${meta.label} yet. Check the provider’s releases for model announcements.`
                 : `The tracker has no ${meta.label} model-catalog source it can poll, so this page stays empty by design. Release and changelog tracking is unaffected.`
             }
             hint={`See the ${meta.label} releases and changelog for model news.`}

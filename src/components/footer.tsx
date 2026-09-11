@@ -4,7 +4,7 @@ export function Footer() {
       className="border-t border-[var(--color-border)] bg-[var(--color-surface)]/30 py-6 sm:py-8"
       style={{ paddingBottom: "max(1.5rem, env(safe-area-inset-bottom))" }}
     >
-      <div className="mx-auto flex max-w-6xl flex-col gap-4 px-4 text-xs text-[var(--color-text-muted)] sm:px-5">
+      <div className="mx-auto flex max-w-6xl flex-col gap-4 px-4 text-ui-md text-[var(--color-text-muted)] sm:px-5">
         <div className="flex flex-wrap items-center gap-4 text-meta">
           {/* /api/health is a route handler, not a page — next/link does
               not apply; the rule is a false positive here. Labelled "Status
@@ -25,7 +25,7 @@ export function Footer() {
           </a>
         </div>
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <p>
+          <p className="shrink-0">
             Maintained by{" "}
             <a
               href="https://jadenrazo.dev"
@@ -41,7 +41,7 @@ export function Footer() {
               RaizHost
             </a>
           </p>
-          <p>
+          <p className="max-w-2xl">
             Not affiliated with Anthropic, OpenAI, or Google. Data sourced from
             each provider&apos;s public docs, status pages, npm, and GitHub.
           </p>

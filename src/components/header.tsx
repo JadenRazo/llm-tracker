@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { usePathname } from "next/navigation";
+import { useEffect, useRef, useState } from "react";
 import { clsx } from "clsx";
 import {
   Activity,
@@ -12,27 +12,19 @@ import {
   Map,
   Menu,
   Package,
+  Rss,
   Terminal,
   X,
-  type LucideIcon,
 } from "lucide-react";
 import { PROVIDERS, type Provider } from "@/lib/providers";
 import {
+  isSectionActive,
   providerFromPathname,
   swapProviderInPath,
 } from "@/lib/provider-route";
 import { getProviderMeta } from "@/lib/provider-meta";
 
-interface NavItem {
-  /** Path suffix appended to the active provider base (""=provider home). */
-  suffix: string;
-  label: string;
-  icon: LucideIcon;
-}
-
-// Links are section-relative: rendered against whichever provider is active
-// (Claude when on the cross-provider root). "" is the provider home.
-const LINKS: NavItem[] = [
+const LINKS = [
   { suffix: "", label: "Learn", icon: BookOpen },
   { suffix: "/models", label: "Models", icon: Boxes },
   { suffix: "/releases", label: "Releases", icon: Terminal },
@@ -42,259 +34,219 @@ const LINKS: NavItem[] = [
   { suffix: "/status", label: "Status", icon: Activity },
 ];
 
-const FALLBACK_PROVIDER: Provider = "claude";
-
-function navHref(provider: Provider, suffix: string): string {
-  return `/${provider}${suffix}`;
-}
-
-function isActive(pathname: string, href: string): boolean {
-  return pathname === href || pathname.startsWith(`${href}/`);
-}
-
-/**
- * Persistent provider switcher. Reflects the active provider derived from the
- * pathname; selecting one navigates to the equivalent page under that
- * provider (e.g. `/claude/releases` → `/openai/releases`). On the
- * cross-provider root nothing is marked current.
- */
-function ProviderSwitcher({
-  activeProvider,
-  pathname,
-  onNavigate,
-  size = "default",
-}: {
-  activeProvider: Provider | null;
-  pathname: string;
-  onNavigate?: () => void;
-  size?: "default" | "full";
-}) {
-  const router = useRouter();
-  return (
-    <div
-      role="group"
-      aria-label="Switch provider"
-      className={clsx(
-        "inline-flex items-center rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] p-0.5",
-        size === "full" && "w-full",
-      )}
-    >
-      {PROVIDERS.map((p) => {
-        const meta = getProviderMeta(p);
-        const current = p === activeProvider;
-        const target = swapProviderInPath(pathname, p);
-        return (
-          <button
-            key={p}
-            type="button"
-            aria-current={current ? "true" : undefined}
-            onClick={() => {
-              onNavigate?.();
-              router.push(target);
-            }}
-            style={{ ["--provider-accent" as string]: meta.accentVar }}
-            className={clsx(
-              "inline-flex flex-1 items-center justify-center gap-1.5 rounded-[5px] px-2.5 py-1 text-ui-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-ring)]",
-              current
-                ? "bg-[var(--color-surface-raised)] text-[var(--color-text-primary)]"
-                : "text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]",
-            )}
-          >
-            <span
-              className={clsx(
-                "size-1.5 rounded-full",
-                current
-                  ? "bg-[var(--provider-accent)]"
-                  : "bg-[var(--color-border)]",
-              )}
-              aria-hidden
-            />
-            {meta.label}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
 export interface HeaderProps {
-  /**
-   * Providers that actually have curated content, per section. Computed on the
-   * server (this component is a client component and cannot read the content
-   * directory) and used to hide nav entries that would land on an empty page.
-   */
-  contentAvailability?: {
-    tips: Provider[];
-    guides: Provider[];
-  };
+  contentAvailability?: { tips: Provider[]; guides: Provider[] };
 }
 
 export function Header({ contentAvailability }: HeaderProps = {}) {
   const pathname = usePathname() ?? "/";
+  const provider = providerFromPathname(pathname);
   const [open, setOpen] = useState(false);
+  const dialog = useRef<HTMLDialogElement>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
+  const linkProvider = provider ?? "claude";
+  const links = LINKS.filter(({ suffix }) => {
+    if (!contentAvailability) return true;
+    if (suffix === "/tips")
+      return contentAvailability.tips.includes(linkProvider);
+    if (suffix === "/guides")
+      return contentAvailability.guides.includes(linkProvider);
+    return true;
+  });
 
-  const activeProvider = providerFromPathname(pathname);
-  // Section links need a concrete base even on the cross-provider root.
-  const linkProvider = activeProvider ?? FALLBACK_PROVIDER;
-
-  // Drop Tips/Guides for a provider that has none, so the nav never offers a
-  // section that opens onto an empty state. When availability is not supplied
-  // (older callers / tests) every link renders, as before.
-  const links = contentAvailability
-    ? LINKS.filter((item) => {
-        if (item.suffix === "/tips") return contentAvailability.tips.includes(linkProvider);
-        if (item.suffix === "/guides") return contentAvailability.guides.includes(linkProvider);
-        return true;
-      })
-    : LINKS;
-
-  // Close the mobile panel on route change.
   useEffect(() => {
     setOpen(false);
   }, [pathname]);
-
-  // Close the mobile panel on Escape key.
   useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
+    const media = window.matchMedia("(min-width: 1024px)");
+    const closeOnDesktop = () => {
+      if (media.matches) setOpen(false);
     };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [open]);
-
-  // Lock body scroll while the mobile panel is open.
+    media.addEventListener("change", closeOnDesktop);
+    return () => media.removeEventListener("change", closeOnDesktop);
+  }, []);
   useEffect(() => {
-    if (!open) return;
-    const prev = document.body.style.overflow;
+    const panel = dialog.current;
+    if (!panel) return;
+    if (!open) {
+      if (panel.open) panel.close();
+      return;
+    }
+    panel.showModal();
+    const menuTrigger = trigger.current;
+    const previous = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     return () => {
-      document.body.style.overflow = prev;
+      document.body.style.overflow = previous;
+      if (panel.open) panel.close();
+      menuTrigger?.focus();
     };
   }, [open]);
 
-  return (
-    <header className="sticky top-0 z-40 border-b border-[var(--color-border)] bg-[color-mix(in_oklab,var(--color-surface)_80%,transparent)] backdrop-blur-md">
-      <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-3 sm:px-5 sm:py-4">
+  const providerLinks = (mobile = false) => (
+    <nav
+      aria-label={mobile ? "Mobile providers" : "Providers"}
+      className="provider-switcher"
+    >
+      {PROVIDERS.map((p) => {
+        let target = swapProviderInPath(pathname, p);
+        const section = target.split("/")[2];
+        if (
+          contentAvailability &&
+          (section === "tips" || section === "guides") &&
+          !contentAvailability[section].includes(p)
+        )
+          target = `/${p}`;
+        return (
+          <Link
+            key={p}
+            href={target}
+            aria-current={provider === p ? "true" : undefined}
+            style={{
+              ["--provider-accent" as string]: getProviderMeta(p).accentVar,
+            }}
+            onClick={() => setOpen(false)}
+          >
+            <span className="provider-dot" aria-hidden />
+            {getProviderMeta(p).label}
+          </Link>
+        );
+      })}
+    </nav>
+  );
+  const sectionLinks = (mobile = false) => (
+    <nav
+      aria-label={mobile ? "Mobile sections" : "Sections"}
+      className={mobile ? "mobile-sections" : "section-nav"}
+    >
+      {links.map(({ suffix, label, icon: Icon }) => (
         <Link
-          href="/"
-          className="font-display text-lg font-semibold tracking-tight text-[var(--color-text-primary)] sm:text-xl"
+          key={label}
+          href={`/${linkProvider}${suffix}`}
+          aria-current={
+            provider && isSectionActive(pathname, provider, suffix)
+              ? "page"
+              : undefined
+          }
+          onClick={() => setOpen(false)}
         >
-          LLM<span className="text-[var(--color-accent)]"> Tracker</span>
+          <Icon size={16} aria-hidden />
+          {label}
         </Link>
+      ))}
+    </nav>
+  );
 
-        <nav
-          aria-label="Primary"
-          className="hidden flex-wrap items-center gap-x-5 gap-y-2 text-ui-sm lg:flex"
-        >
-          {links.map((l) => {
-            const Icon = l.icon;
-            const href = navHref(linkProvider, l.suffix);
-            const active =
-              activeProvider !== null && isActive(pathname, href);
-            return (
-              <Link
-                key={l.suffix || "home"}
-                href={href}
-                aria-current={active ? "page" : undefined}
-                className={clsx(
-                  "relative inline-flex items-center gap-1.5 py-1 transition-colors",
-                  active
-                    ? "text-[var(--color-text-primary)] after:absolute after:inset-x-0 after:-bottom-[calc(0.75rem+1px)] after:h-0.5 after:bg-[var(--color-ring)]"
-                    : "text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]",
-                )}
-              >
-                <Icon className="size-4" aria-hidden />
-                <span>{l.label}</span>
-              </Link>
-            );
-          })}
-        </nav>
-
-        <div className="hidden lg:block">
-          <ProviderSwitcher
-            activeProvider={activeProvider}
-            pathname={pathname}
-          />
+  return (
+    <header className="site-header">
+      <div className="header-inner">
+        <Link href="/" className="site-brand" aria-label="LLM Tracker home">
+          <Terminal size={22} strokeWidth={1.7} aria-hidden />
+          <span>
+            LLM
+            <span className="font-normal text-[var(--color-text-muted)]">
+              {" "}
+              Tracker
+            </span>
+          </span>
+        </Link>
+        <div className="hidden items-center gap-7 lg:flex">
+          <Link
+            href="/"
+            aria-current={pathname === "/" ? "page" : undefined}
+            className={clsx("overview-link", pathname === "/" && "is-current")}
+          >
+            Overview
+          </Link>
+          {providerLinks()}
         </div>
-
+        <a
+          href="/rss.xml"
+          className="quiet-link ml-auto hidden gap-2 lg:inline-flex"
+        >
+          <Rss size={15} aria-hidden />
+          Subscribe
+        </a>
         <button
+          ref={trigger}
           type="button"
-          onClick={() => setOpen((o) => !o)}
+          onClick={() => setOpen(true)}
           aria-expanded={open}
           aria-controls="mobile-nav"
-          aria-label={open ? "Close menu" : "Open menu"}
-          className="inline-flex size-11 items-center justify-center rounded-md border border-[var(--color-border)] text-[var(--color-text-primary)] transition-colors hover:bg-[var(--color-surface-raised)] lg:hidden"
+          aria-label="Open menu"
+          className="icon-button lg:hidden"
         >
-          {open ? (
-            <X className="size-5" aria-hidden />
-          ) : (
-            <Menu className="size-5" aria-hidden />
-          )}
+          <Menu size={22} aria-hidden />
         </button>
       </div>
-
-      {open ? (
-        <>
-          <button
-            type="button"
-            aria-hidden
-            tabIndex={-1}
-            onClick={() => setOpen(false)}
-            className="absolute inset-x-0 top-full h-[100dvh] z-30 bg-black/40 backdrop-blur-sm lg:hidden"
-          />
-          <nav
-            id="mobile-nav"
-            aria-label="Mobile primary"
-            className="absolute inset-x-0 top-full z-40 border-t border-[var(--color-border)] bg-[var(--color-surface)] lg:hidden"
-          >
-            <div className="mx-auto max-w-6xl px-3 py-3">
-              <p className="mb-2 text-meta text-[var(--color-text-muted)]">
-                PROVIDER
-              </p>
-              <ProviderSwitcher
-                activeProvider={activeProvider}
-                pathname={pathname}
-                onNavigate={() => setOpen(false)}
-                size="full"
-              />
-            </div>
-            <ul className="mx-auto flex max-w-6xl flex-col px-2 pb-2">
-              {links.map((l) => {
-                const Icon = l.icon;
-                const href = navHref(linkProvider, l.suffix);
-                const active =
-                  activeProvider !== null && isActive(pathname, href);
-                return (
-                  <li key={l.suffix || "home"}>
-                    <Link
-                      href={href}
-                      aria-current={active ? "page" : undefined}
-                      className={clsx(
-                        "flex items-center gap-3 rounded-md px-3 py-3 text-ui-md transition-colors",
-                        active
-                          ? "bg-[var(--color-surface-raised)] text-[var(--color-text-primary)]"
-                          : "text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-raised)] hover:text-[var(--color-text-primary)]",
-                      )}
-                    >
-                      <Icon
-                        className={clsx(
-                          "size-5",
-                          active
-                            ? "text-[var(--color-ring)]"
-                            : "text-[var(--color-text-muted)]",
-                        )}
-                        aria-hidden
-                      />
-                      <span>{l.label}</span>
-                    </Link>
-                  </li>
-                );
-              })}
-            </ul>
-          </nav>
-        </>
+      {provider ? (
+        <div className="hidden border-t border-[var(--color-border)] lg:block">
+          <div className="header-sections">{sectionLinks()}</div>
+        </div>
       ) : null}
+      <dialog
+        ref={dialog}
+        id="mobile-nav"
+        aria-label="Navigation"
+        className="mobile-dialog"
+        onKeyDown={(event) => {
+          if (event.key !== "Tab") return;
+          const focusable = Array.from(
+            event.currentTarget.querySelectorAll<HTMLElement>(
+              "a[href], button:not([disabled]), input, select, [tabindex='0']",
+            ),
+          ).filter((element) => element.getClientRects().length > 0);
+          const first = focusable[0];
+          const last = focusable[focusable.length - 1];
+          if (
+            event.shiftKey &&
+            (document.activeElement === first ||
+              document.activeElement === event.currentTarget)
+          ) {
+            event.preventDefault();
+            last?.focus();
+          } else if (!event.shiftKey && document.activeElement === last) {
+            event.preventDefault();
+            first?.focus();
+          }
+        }}
+        onCancel={() => setOpen(false)}
+        onClose={() => setOpen(false)}
+        onClick={(event) => {
+          if (event.target === event.currentTarget) setOpen(false);
+        }}
+      >
+        <div className="mobile-dialog-body">
+          <div className="mb-5 flex items-center justify-between">
+            <span className="font-semibold">Explore LLM Tracker</span>
+            <button
+              type="button"
+              aria-label="Close menu"
+              className="icon-button"
+              onClick={() => setOpen(false)}
+            >
+              <X size={20} aria-hidden />
+            </button>
+          </div>
+          <Link
+            href="/"
+            onClick={() => setOpen(false)}
+            aria-current={pathname === "/" ? "page" : undefined}
+            className="mobile-overview"
+          >
+            All providers · Overview
+          </Link>
+          {providerLinks(true)}
+          <p className="mb-2 mt-6 text-ui-sm text-[var(--color-text-muted)]">
+            Explore {getProviderMeta(linkProvider).label}
+          </p>
+          {sectionLinks(true)}
+          <a href="/rss.xml" className="quiet-link mt-5 inline-flex gap-2">
+            <Rss size={16} aria-hidden />
+            Subscribe to the feed
+          </a>
+        </div>
+      </dialog>
     </header>
   );
 }
