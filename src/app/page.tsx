@@ -103,11 +103,11 @@ export default async function HomePage() {
             in one place.
           </p>
         </div>
-        <a href="/rss.xml" className="intro-subscribe">
+        <Link href="/subscribe" className="intro-subscribe">
           <Rss size={16} aria-hidden />
           Follow the feed
           <ArrowUpRight size={16} aria-hidden />
-        </a>
+        </Link>
       </section>
       <div className="overview-grid">
         <section className="min-w-0" aria-labelledby="activity-heading">

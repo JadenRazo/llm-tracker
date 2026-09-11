@@ -28,6 +28,8 @@ const ALLOWED = [
   // Source-owned metadata assets contain no database reads.
   /^\/icon\.svg$/,
   /^\/opengraph-image$/,
+  // RSS instructions and feed URLs are source-owned; this page reads no DB.
+  /^\/subscribe$/,
   // Concrete paths from `routes`.
   /^\/(claude|openai|gemini)\/(tips|guides)$/,
   /^\/(claude|openai|gemini)\/(tips|guides)\/[^/]+$/,
@@ -52,15 +54,19 @@ const prerendered = [
   ...Object.keys(manifest.dynamicRoutes ?? {}),
 ];
 
-const offenders = prerendered.filter((route) => !ALLOWED.some((re) => re.test(route)));
+const offenders = prerendered.filter(
+  (route) => !ALLOWED.some((re) => re.test(route)),
+);
 
 if (offenders.length > 0) {
-  console.error("These routes are prerendered but are not in the file-backed allow-list:\n");
+  console.error(
+    "These routes are prerendered but are not in the file-backed allow-list:\n",
+  );
   for (const route of offenders) console.error(`  ${route}`);
   console.error(
     "\nA database-backed route must NOT be prerendered: CI builds without DATABASE_URL,\n" +
       "so its snapshot is empty, and the Lambda's read-only filesystem cannot durably\n" +
-      "replace it. Add `export const dynamic = \"force-dynamic\"` to the route and give it\n" +
+      'replace it. Add `export const dynamic = "force-dynamic"` to the route and give it\n' +
       "an explicit Cache-Control in next.config.ts, or extend ALLOWED in this script if\n" +
       "the route genuinely reads no database.",
   );

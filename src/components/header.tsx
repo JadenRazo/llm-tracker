@@ -160,13 +160,14 @@ export function Header({ contentAvailability }: HeaderProps = {}) {
           </Link>
           {providerLinks()}
         </div>
-        <a
-          href="/rss.xml"
+        <Link
+          href="/subscribe"
+          aria-current={pathname === "/subscribe" ? "page" : undefined}
           className="quiet-link ml-auto hidden gap-2 lg:inline-flex"
         >
           <Rss size={15} aria-hidden />
           Subscribe
-        </a>
+        </Link>
         <button
           ref={trigger}
           type="button"
@@ -241,10 +242,15 @@ export function Header({ contentAvailability }: HeaderProps = {}) {
             Explore {getProviderMeta(linkProvider).label}
           </p>
           {sectionLinks(true)}
-          <a href="/rss.xml" className="quiet-link mt-5 inline-flex gap-2">
+          <Link
+            href="/subscribe"
+            aria-current={pathname === "/subscribe" ? "page" : undefined}
+            onClick={() => setOpen(false)}
+            className="quiet-link mt-5 inline-flex gap-2"
+          >
             <Rss size={16} aria-hidden />
             Subscribe to the feed
-          </a>
+          </Link>
         </div>
       </dialog>
     </header>
