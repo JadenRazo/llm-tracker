@@ -1,231 +1,286 @@
-import {
-  Boxes,
-  Brain,
-  ChevronsUpDown,
-  Eye,
-  FileText,
-  Wrench,
-  type LucideIcon,
-} from "lucide-react";
+"use client";
+
+import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { Check, Copy, Search } from "lucide-react";
 import type { Model } from "@/lib/db/schema";
-import { Badge } from "@/components/ui/badge";
-import { Card } from "@/components/ui/card";
-import { EmptyState } from "@/components/ui/empty-state";
-import { RelativeTime } from "@/components/ui/relative-time";
+import {
+  capabilityLabel,
+  capabilityOptions,
+  formatContext,
+  formatTrackedDate,
+  selectModels,
+  trueCapabilities,
+  type ModelSort,
+} from "@/lib/model-catalog";
 
-/** Known capability → icon + human label. Anything not in the map renders as a
- * plain text pill using the raw key (capitalized / spaced). */
-const CAPABILITY_META: Record<string, { icon: LucideIcon; label: string }> = {
-  toolUse: { icon: Wrench, label: "Tool use" },
-  vision: { icon: Eye, label: "Vision" },
-  extendedThinking: { icon: Brain, label: "Extended thinking" },
-  adaptiveThinking: { icon: Brain, label: "Adaptive thinking" },
-  thinking: { icon: Brain, label: "Thinking" },
-  pdfs: { icon: FileText, label: "PDFs" },
-  // Gemini capability keys, derived from its docs' capability sections.
-  functionCalling: { icon: Wrench, label: "Function calling" },
-  structuredOutputs: { icon: FileText, label: "Structured outputs" },
-  codeExecution: { icon: Wrench, label: "Code execution" },
-  imageGeneration: { icon: Eye, label: "Image generation" },
-  audioGeneration: { icon: Eye, label: "Audio generation" },
-  computerUse: { icon: Wrench, label: "Computer use" },
-  searchGrounding: { icon: Eye, label: "Search grounding" },
-  groundingWithGoogleMaps: { icon: Eye, label: "Maps grounding" },
-  urlContext: { icon: FileText, label: "URL context" },
-  fileSearch: { icon: FileText, label: "File search" },
-  batchApi: { icon: Wrench, label: "Batch API" },
-  liveApi: { icon: Wrench, label: "Live API" },
-  flexInference: { icon: Wrench, label: "Flex inference" },
-  priorityInference: { icon: Wrench, label: "Priority inference" },
-  priorityTier: { icon: Wrench, label: "Priority tier" },
-  caching: { icon: FileText, label: "Caching" },
-  // OpenAI capability keys, derived from its docs' modality + endpoint tables.
-  reasoning: { icon: Brain, label: "Reasoning" },
-  audioInput: { icon: Eye, label: "Audio input" },
-  fineTuning: { icon: Wrench, label: "Fine-tuning" },
-  documented: { icon: FileText, label: "Documented" },
-};
-
-interface ResolvedCapability {
-  key: string;
-  label: string;
-  icon?: LucideIcon;
-}
-
-function resolveCapabilities(caps: Record<string, boolean> | null): ResolvedCapability[] {
-  if (!caps) return [];
-  return Object.entries(caps)
-    .filter(([, v]) => v)
-    .map(([key]) => {
-      const known = CAPABILITY_META[key];
-      if (known) return { key, label: known.label, icon: known.icon };
-      const label = key.replace(/([A-Z])/g, " $1").replace(/^./, (c) => c.toUpperCase()).trim();
-      return { key, label };
-    });
-}
-
-function formatContextWindow(n: number | null): string {
-  if (n === null || n === undefined) return "—";
-  if (n >= 1_000_000) return `${Math.round(n / 1_000_000)}M`;
-  if (n >= 1_000) return `${Math.round(n / 1_000)}K`;
-  return n.toString();
-}
-
-interface HeaderCellProps {
-  children: React.ReactNode;
-  sortable?: boolean;
-  align?: "left" | "right";
-  className?: string;
-}
-
-function HeaderCell({ children, sortable = false, align = "left", className }: HeaderCellProps) {
+function ModelIdentity({ model }: { model: Model }) {
+  const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">(
+    "idle",
+  );
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      if (timer.current) clearTimeout(timer.current);
+    };
+  }, []);
+  async function copyId() {
+    try {
+      await navigator.clipboard.writeText(model.id);
+      if (!mounted.current) return;
+      setCopyState("copied");
+    } catch {
+      if (mounted.current) setCopyState("failed");
+    }
+    if (!mounted.current) return;
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(() => setCopyState("idle"), 4000);
+  }
   return (
-    <th
-      className={`px-4 py-3 text-meta text-[var(--color-text-secondary)] ${
-        align === "right" ? "text-right" : "text-left"
-      } ${className ?? ""}`}
-    >
+    <div className="min-w-0">
+      <p className="font-medium text-[var(--color-text-primary)] [overflow-wrap:anywhere]">
+        {model.displayName || model.id}
+      </p>
+      <div className="mt-1 flex items-center gap-2">
+        <code className="model-id min-w-0 flex-1 whitespace-normal break-all">
+          {model.id}
+        </code>
+        <button
+          type="button"
+          className="copy-model-id"
+          aria-label={`Copy model ID ${model.id}`}
+          onClick={copyId}
+        >
+          {copyState === "copied" ? (
+            <Check size={15} aria-hidden />
+          ) : (
+            <Copy size={15} aria-hidden />
+          )}
+        </button>
+      </div>
       <span
-        className={`inline-flex items-center gap-1.5 ${
-          align === "right" ? "justify-end" : ""
-        }`}
+        role="status"
+        className={
+          copyState === "idle"
+            ? "sr-only"
+            : "text-xs text-[var(--color-text-muted)]"
+        }
       >
-        {children}
-        {sortable ? (
-          <ChevronsUpDown className="size-3 opacity-40" aria-hidden />
-        ) : null}
+        {copyState === "copied"
+          ? "Model ID copied"
+          : copyState === "failed"
+            ? "Couldn’t copy. Select the model ID to copy it manually."
+            : ""}
       </span>
-    </th>
+    </div>
   );
 }
 
-export function ModelTable({ models }: { models: Model[] }) {
-  if (models.length === 0) {
+function Capabilities({ model }: { model: Model }) {
+  const keys = trueCapabilities(model.capabilities);
+  if (!keys.length) {
     return (
-      <EmptyState
-        icon={Boxes}
-        title="Catalog warming up"
-        description="The models poller runs every 30 minutes."
-        hint="First population typically completes within 30 minutes of deploy."
-      />
+      <span className="text-sm text-[var(--color-text-muted)]">
+        None reported
+      </span>
     );
+  }
+  return (
+    <div className="flex min-w-0 flex-wrap gap-1.5">
+      {keys.map((key) => (
+        <span
+          key={key}
+          className="capability-tag max-w-full whitespace-normal text-xs [overflow-wrap:anywhere]"
+        >
+          {capabilityLabel(key)}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function TrackedDate({ date }: { date: Date }) {
+  const formatted = formatTrackedDate(date);
+  return formatted ? (
+    <time dateTime={date.toISOString()}>{formatted} UTC</time>
+  ) : (
+    <span>Not reported</span>
+  );
+}
+
+export function ModelTable({ models }: { models: readonly Model[] }) {
+  const id = useId();
+  const [query, setQuery] = useState("");
+  const [capability, setCapability] = useState<string | null>(null);
+  const [sort, setSort] = useState<ModelSort>("newest");
+  const options = useMemo(() => capabilityOptions(models), [models]);
+  const activeCapability =
+    capability !== null && options.includes(capability) ? capability : null;
+  const visible = useMemo(
+    () => selectModels(models, query, activeCapability, sort),
+    [models, query, activeCapability, sort],
+  );
+  const changed =
+    query !== "" || activeCapability !== null || sort !== "newest";
+
+  function reset() {
+    setQuery("");
+    setCapability(null);
+    setSort("newest");
   }
 
   return (
-    <>
-      <ul className="space-y-3 lg:hidden">
-        {models.map((m) => {
-          const caps = resolveCapabilities(m.capabilities);
-          return (
-            <li key={m.id}>
-              <Card variant="raised" className="space-y-3">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0 flex-1">
-                    <code className="break-all font-mono text-ui-sm text-[var(--color-text-primary)]">
-                      {m.id}
-                    </code>
-                  </div>
-                  {m.contextWindow ? (
-                    <span className="inline-flex shrink-0 items-center rounded border border-[var(--color-border)]/50 bg-[var(--color-surface-raised)] px-1.5 py-0.5 font-mono text-ui-sm text-[var(--color-text-secondary)]">
-                      {formatContextWindow(m.contextWindow)}
-                    </span>
-                  ) : null}
-                </div>
-
-                <p className="text-ui-md text-[var(--color-text-primary)]">
-                  {m.displayName}
-                </p>
-
-                {caps.length > 0 ? (
-                  <div className="flex flex-wrap gap-1.5">
-                    {caps.map((c) => (
-                      <Badge
-                        key={c.key}
-                        variant="source"
-                        sourceKey="anthropic_models"
-                        icon={c.icon}
-                      >
-                        {c.label}
-                      </Badge>
-                    ))}
-                  </div>
-                ) : null}
-
-                <div className="flex items-center gap-2 text-meta text-[var(--color-text-muted)]">
-                  <span>First seen</span>
-                  <RelativeTime date={m.firstSeenAt} className="text-meta" />
-                </div>
-              </Card>
-            </li>
-          );
-        })}
-      </ul>
-
-      <Card variant="raised" className="hidden overflow-hidden p-0 lg:block">
-        <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-[var(--color-border)] text-ui-sm">
-            <thead className="bg-[var(--color-surface-raised)]">
-              <tr>
-                <HeaderCell sortable className="sticky left-0 z-10 bg-[var(--color-surface-raised)]">
-                  ID
-                </HeaderCell>
-                <HeaderCell sortable>Display name</HeaderCell>
-                <HeaderCell sortable align="right">
-                  Context
-                </HeaderCell>
-                <HeaderCell>Capabilities</HeaderCell>
-                <HeaderCell sortable>First seen</HeaderCell>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-[var(--color-border)]">
-              {models.map((m) => {
-                const caps = resolveCapabilities(m.capabilities);
-                return (
-                  <tr
-                    key={m.id}
-                    className="transition-colors hover:bg-[color-mix(in_oklab,var(--color-src-models)_6%,var(--color-surface))]"
-                  >
-                    <td className="sticky left-0 bg-[var(--color-surface)] px-4 py-3 font-mono text-ui-sm text-[var(--color-text-primary)]">
-                      {m.id}
-                    </td>
-                    <td className="px-4 py-3 text-[var(--color-text-primary)]">{m.displayName}</td>
-                    <td className="px-4 py-3 text-right">
-                      {m.contextWindow ? (
-                        <span className="inline-flex items-center rounded border border-[var(--color-border)]/50 bg-[var(--color-surface-raised)] px-1.5 py-0.5 font-mono text-ui-sm text-[var(--color-text-secondary)]">
-                          {formatContextWindow(m.contextWindow)}
-                        </span>
-                      ) : (
-                        <span className="font-mono text-[var(--color-text-muted)]">—</span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex flex-wrap gap-1.5">
-                        {caps.length === 0 ? (
-                          <span className="text-meta text-[var(--color-text-muted)]">—</span>
-                        ) : (
-                          caps.map((c) => (
-                            <Badge
-                              key={c.key}
-                              variant="source"
-                              sourceKey="anthropic_models"
-                              icon={c.icon}
-                            >
-                              {c.label}
-                            </Badge>
-                          ))
-                        )}
-                      </div>
-                    </td>
-                    <td className="px-4 py-3">
-                      <RelativeTime date={m.firstSeenAt} />
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+    <section aria-label="Model catalog" className="min-w-0 space-y-4">
+      <div className="model-toolbar flex flex-wrap items-end gap-3">
+        <div className="min-w-0 flex-1 basis-64">
+          <label htmlFor={`${id}-search`} className="mb-1 block text-sm">
+            Search models
+          </label>
+          <div className="search-field">
+            <Search className="size-4 shrink-0" aria-hidden="true" />
+            <input
+              id={`${id}-search`}
+              type="search"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="ID, name, or capability"
+              className="min-w-0 w-full"
+            />
+          </div>
         </div>
-      </Card>
-    </>
+        <div className="min-w-0 max-w-full">
+          <label htmlFor={`${id}-capability`} className="mb-1 block text-sm">
+            Capability
+          </label>
+          <select
+            id={`${id}-capability`}
+            className="filter-select max-w-full"
+            value={activeCapability === null ? "" : `cap:${activeCapability}`}
+            onChange={(event) =>
+              setCapability(
+                event.target.value === "" ? null : event.target.value.slice(4),
+              )
+            }
+          >
+            <option value="">All capabilities</option>
+            {options.map((key) => (
+              <option key={key} value={`cap:${key}`}>
+                {capabilityLabel(key)}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="min-w-0 max-w-full">
+          <label htmlFor={`${id}-sort`} className="mb-1 block text-sm">
+            Sort by
+          </label>
+          <select
+            id={`${id}-sort`}
+            className="filter-select max-w-full"
+            value={sort}
+            onChange={(event) => setSort(event.target.value as ModelSort)}
+          >
+            <option value="newest">Newest tracked</option>
+            <option value="name">Name A–Z</option>
+            <option value="context">Largest context</option>
+          </select>
+        </div>
+        <button
+          type="button"
+          className="action-link"
+          disabled={!changed}
+          onClick={reset}
+        >
+          Reset
+        </button>
+      </div>
+
+      <div className="model-results space-y-1 text-sm text-[var(--color-text-secondary)]">
+        <p role="status" aria-live="polite" aria-atomic="true">
+          Showing {visible.length} of {models.length} models
+        </p>
+      </div>
+
+      {visible.length === 0 ? (
+        <div className="filter-empty space-y-2">
+          <p className="font-medium">
+            {models.length === 0
+              ? "No models tracked yet"
+              : "No models match your filters"}
+          </p>
+          <p className="text-sm text-[var(--color-text-secondary)]">
+            {models.length === 0
+              ? "The catalog has no model records to display."
+              : "Try a different search or reset the filters."}
+          </p>
+        </div>
+      ) : (
+        <>
+          <ul
+            className="model-mobile-list space-y-3 lg:hidden"
+            aria-label="Models"
+          >
+            {visible.map((model) => (
+              <li
+                key={model.id}
+                className="model-mobile-card min-w-0 space-y-3"
+              >
+                <ModelIdentity model={model} />
+                <p className="text-sm">
+                  Context: {formatContext(model.contextWindow)}
+                </p>
+                <Capabilities model={model} />
+                <p className="text-xs text-[var(--color-text-muted)]">
+                  First tracked: <TrackedDate date={model.firstSeenAt} />
+                </p>
+              </li>
+            ))}
+          </ul>
+          <div className="hidden lg:block">
+            <div className="model-table-wrap overflow-x-auto">
+              <table className="model-table w-full text-left text-sm">
+                <caption className="sr-only">Filtered model catalog</caption>
+                <thead>
+                  <tr>
+                    <th scope="col" className="w-[32%] px-4 py-3">
+                      Model
+                    </th>
+                    <th scope="col" className="w-[20%] px-4 py-3">
+                      Context
+                    </th>
+                    <th scope="col" className="w-[30%] px-4 py-3">
+                      Capabilities
+                    </th>
+                    <th scope="col" className="w-[18%] px-4 py-3">
+                      First tracked
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {visible.map((model) => (
+                    <tr key={model.id}>
+                      <td className="px-4 py-3 align-top">
+                        <ModelIdentity model={model} />
+                      </td>
+                      <td className="px-4 py-3 align-top">
+                        {formatContext(model.contextWindow)}
+                      </td>
+                      <td className="px-4 py-3 align-top">
+                        <Capabilities model={model} />
+                      </td>
+                      <td className="px-4 py-3 align-top text-[var(--color-text-muted)]">
+                        <TrackedDate date={model.firstSeenAt} />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </>
+      )}
+    </section>
   );
 }

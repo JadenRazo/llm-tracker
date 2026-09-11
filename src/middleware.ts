@@ -57,6 +57,8 @@ const PROVIDER_SUBPAGES = new Set([
 const HARD_404_TARGET = "/claude/guides/__hard_404__";
 
 function isUnknownPath(pathname: string): boolean {
+  // Next's generated share image is an extensionless metadata route.
+  if (pathname === "/opengraph-image") return false;
   const segments = pathname.split("/").filter(Boolean);
 
   // "/" — the cross-provider home.

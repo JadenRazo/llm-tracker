@@ -4,7 +4,7 @@ import { getSource } from "@/components/sources";
 
 interface CardProps {
   variant?: "flat" | "raised" | "outlined";
-  /** Source key — when set, applies matching src-* tint class and a left accent. */
+  /** Source key supplies a matching tint for interactive states. */
   sourceKey?: string;
   /** Adds hover lift + tinted outline. Intended for cards that link somewhere. */
   interactive?: boolean;
@@ -33,13 +33,10 @@ export function Card({
         variant === "outlined"
           ? "border border-[var(--color-border)] bg-transparent"
           : "border border-[var(--color-border)] bg-[var(--color-surface)]",
-        variant === "raised" && "shadow-[var(--shadow-raised)]",
-        // Source-tinted left accent
         tintClass,
-        sourceKey && "border-l-4 border-l-[var(--tint)]",
         // Interactive affordance
         interactive &&
-          "transition-transform duration-200 hover:-translate-y-0.5 hover:shadow-[var(--shadow-pop)] hover:outline hover:outline-1 hover:outline-[color-mix(in_oklab,var(--tint,var(--color-border))_40%,transparent)]",
+          "transition-colors duration-150 hover:border-[var(--color-text-muted)]",
         className,
       )}
     >

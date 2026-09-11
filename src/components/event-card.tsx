@@ -106,9 +106,9 @@ const SIZE_PADDING: Record<EventCardSize, string> = {
 };
 
 const SIZE_TITLE: Record<EventCardSize, string> = {
-  sm: "text-display-sm",
-  md: "text-display-sm",
-  lg: "text-display-sm lg:text-display-md",
+  sm: "!font-sans text-lg leading-snug font-semibold",
+  md: "!font-sans text-lg leading-snug font-semibold",
+  lg: "!font-sans text-xl leading-snug font-semibold",
 };
 
 const SIZE_CLAMP: Record<EventCardSize, string> = {
@@ -133,7 +133,6 @@ export function EventCard({ event, size = "md", className }: EventCardProps) {
       interactive
       className={clsx(
         SIZE_PADDING[size],
-        size === "lg" && "border-l-[6px]",
         className,
       )}
     >
@@ -145,7 +144,7 @@ export function EventCard({ event, size = "md", className }: EventCardProps) {
         {subType ? (
           <span className="text-meta text-[var(--color-text-muted)]">{subType}</span>
         ) : null}
-        <RelativeTime date={whenDate} className="ml-auto shrink-0" />
+        <span className="ml-auto shrink-0 text-xs text-[var(--color-text-muted)]">{!event.publishedAt ? "Detected " : ""}<RelativeTime date={whenDate} /></span>
       </header>
       <h3 className={clsx(SIZE_TITLE[size], "text-[var(--color-text-primary)]")}>
         {event.url ? (

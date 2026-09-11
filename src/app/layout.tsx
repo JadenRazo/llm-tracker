@@ -38,7 +38,7 @@ export const metadata: Metadata = {
     template: "%s — LLM Tracker",
   },
   description:
-    "A self-updating reference tracking what ships across Claude, OpenAI, and Gemini — CLI releases, models, docs, and status. Claude Code and Codex are the coding headliners; everything re-verifies itself as releases land.",
+    "Track releases, models, commands, and status across Claude, OpenAI, and Gemini, with links to the original sources.",
   metadataBase: new URL(SITE_URL),
   alternates: {
     canonical: "/",
@@ -54,7 +54,7 @@ export const metadata: Metadata = {
   openGraph: {
     title: "LLM Tracker — what's shipping across Claude, OpenAI & Gemini",
     description:
-      "Track Claude, OpenAI, and Gemini in one place — releases, CLIs, models, docs, and status, version-pinned and re-verified as they ship.",
+      "Follow releases, model catalogs, developer tools, and provider status across Claude, OpenAI, and Gemini.",
     url: SITE_URL,
     siteName: "LLM Tracker",
     type: "website",
@@ -65,7 +65,7 @@ export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   viewportFit: "cover",
-  themeColor: "#1c1108",
+  themeColor: "#111611",
 };
 
 export default function RootLayout({
@@ -80,13 +80,14 @@ export default function RootLayout({
       className={`${inter.variable} ${jetbrainsMono.variable} ${playfair.variable}`}
     >
       <body className="flex min-h-dvh flex-col">
+        <a className="skip" href="#main-content">Skip to content</a>
         <Header
           contentAvailability={{
             tips: providersWithContent("tips"),
             guides: providersWithContent("guides"),
           }}
         />
-        <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-6 sm:px-5 sm:py-8">
+        <main id="main-content" tabIndex={-1} className="mx-auto w-full max-w-6xl flex-1 px-4 py-6 sm:px-5 sm:py-8">
           {children}
         </main>
         <Footer />
