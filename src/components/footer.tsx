@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 export function Footer() {
   return (
     <footer
@@ -17,12 +19,12 @@ export function Footer() {
           >
             Status JSON
           </a>
-          <a
-            href="/rss.xml"
+          <Link
+            href="/subscribe"
             className="text-[var(--color-text-secondary)] hover:text-[var(--color-highlight)]"
           >
-            RSS
-          </a>
+            RSS feeds
+          </Link>
         </div>
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <p className="shrink-0">
