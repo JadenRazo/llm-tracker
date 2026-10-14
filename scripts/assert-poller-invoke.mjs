@@ -71,4 +71,14 @@ for (const s of sources) {
   if (s.error) console.log(`::warning::${fn} source ${s.source} failed: ${s.error}`);
 }
 
+// Frontier publication is a required prerequisite for the new web release.
+// A failed SQL write must not pass on an older still-fresh accepted profile.
+if (tier === 3) {
+  const frontier = sources.filter((s) => s.source.startsWith("frontier_"));
+  if (frontier.length !== 3 || frontier.some((s) => s.error || !["ok", "unchanged"].includes(s.status))) {
+    console.error("::error::All three frontier sources must complete successfully before web activation");
+    process.exit(1);
+  }
+}
+
 console.log(`${fn}: tier ${tier}, ${ran} source(s) ran, ${err} failing (tolerated)`);

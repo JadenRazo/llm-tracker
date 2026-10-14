@@ -199,3 +199,32 @@ export const pollerRuns = pgTable(
 
 export type PollerRun = typeof pollerRuns.$inferSelect;
 export type NewPollerRun = typeof pollerRuns.$inferInsert;
+
+// Frontier automation is additive; accepted evidence is separate from HTTP cache.
+export const frontierDocuments = pgTable("frontier_documents", {
+  url: text("url").primaryKey(),
+  provider: text("provider").notNull(),
+  body: text("body").notNull(),
+  hash: text("hash").notNull(),
+  etag: text("etag"),
+  lastModified: text("last_modified"),
+  fetchedAt: nowTz("fetched_at"),
+});
+
+export const frontierRevisions = pgTable("frontier_revisions", {
+  id: text("id").primaryKey(),
+  provider: text("provider").notNull(),
+  modelId: text("model_id").notNull(),
+  facts: jsonb("facts").notNull(),
+  evidence: jsonb("evidence").notNull(),
+  acceptedAt: nowTz("accepted_at"),
+  verifiedAt: nowTz("verified_at"),
+}, (t) => ({ modelIdx: index("frontier_revisions_model_idx").on(t.provider, t.modelId, t.verifiedAt) }));
+
+export const frontierStates = pgTable("frontier_states", {
+  provider: text("provider").primaryKey(),
+  revisionId: text("revision_id").references(() => frontierRevisions.id),
+  attemptedAt: timestamp("attempted_at", { withTimezone: true, mode: "date" }),
+  error: text("error"),
+  paused: boolean("paused").notNull().default(false),
+});

@@ -1,4 +1,5 @@
 import type { Provider } from "@/lib/providers";
+import type { FrontierFacts } from "@/lib/frontier/schema";
 
 // Editorial profiles: official sources checked by a person/agent, not inferred
 // from ingestion timestamps or model names. See content/frontier-models.md.
@@ -22,6 +23,11 @@ export interface FrontierModel {
   access: string;
   price: { input: number; output: number; cardNote: string; note: string; until?: string; nextInput?: number; nextOutput?: number };
   sources: { label: string; url: string }[];
+  facts?: FrontierFacts;
+  verifiedAt?: string;
+  revisionId?: string;
+  freshness?: "current" | "stale" | "failed" | "fallback" | "archived";
+  freshnessNote?: string;
 }
 
 export const FRONTIER_MODELS: readonly FrontierModel[] = [
@@ -79,14 +85,14 @@ export function frontierModel(id: string): FrontierModel | undefined {
 }
 
 /** Missing means defaults; empty/invalid means no selection, never invented IDs. */
-export function comparisonSelection(raw: string | null | undefined): FrontierModel[] {
-  if (raw == null) return [...FRONTIER_MODELS];
+export function comparisonSelection(raw: string | null | undefined, available: readonly FrontierModel[] = FRONTIER_MODELS): FrontierModel[] {
+  if (raw == null) return available.filter((m) => m.freshness !== "archived").slice(0,3);
   const ids = new Set(raw.split(","));
-  return FRONTIER_MODELS.filter((model) => ids.has(model.id));
+  return available.filter((model) => ids.has(model.id)).slice(0,3);
 }
 
-export function comparisonHref(ids: readonly string[]): string {
-  const selected = comparisonSelection(ids.join(","));
+export function comparisonHref(ids: readonly string[], available: readonly FrontierModel[] = FRONTIER_MODELS): string {
+  const selected = comparisonSelection(ids.join(","), available);
   return `/compare?models=${selected.map((model) => model.id).join(",")}`;
 }
 
@@ -95,6 +101,11 @@ export function profileNeedsReview(now: Date): boolean {
 }
 
 export function modelPrice(model: FrontierModel, asOf: string) {
+  if (model.facts) {
+    const pricing = model.facts.pricing;
+    const change = pricing.changes.filter((c) => c.effectiveAt <= asOf).at(-1);
+    return { input: change?.input ?? pricing.input, output: change?.output ?? pricing.output };
+  }
   const price = model.price;
   if (price.until && asOf >= price.until && price.nextInput !== undefined && price.nextOutput !== undefined) {
     return { input: price.nextInput, output: price.nextOutput };
@@ -116,7 +127,7 @@ export function comparisonRows(models: readonly FrontierModel[], asOf: string): 
     ["Output / 1M tokens", (m) => `$${modelPrice(m, asOf).output}`],
     ["Pricing conditions", (m) => m.price.note],
     ["API access", (m) => m.access],
-    ["Native output", () => "Text"],
+    ["Native output", (m) => m.facts ? m.facts.outputs.join(", ") : "Text"],
   ];
   return fields.map(([label, getValue]) => ({ label, values: models.map(getValue) }));
 }

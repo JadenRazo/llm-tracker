@@ -1,16 +1,16 @@
 import Link from "next/link";
 import { ArrowRight, ArrowUpRight } from "lucide-react";
-import { FRONTIER_MODELS, modelPrice } from "@/lib/frontier-models";
+import { modelPrice, type FrontierModel } from "@/lib/frontier-models";
 import { getProviderMeta } from "@/lib/provider-meta";
 
-export function FrontierModelCards({ asOf }: { asOf: string }) {
+export function FrontierModelCards({ asOf, models }: { asOf: string; models: readonly FrontierModel[] }) {
   return (
     <>
     <nav className="frontier-quick-links" aria-label="Frontier model profiles">
-      {FRONTIER_MODELS.map((model) => <Link key={model.id} href={`/models/${model.id}`}><span>{model.name}</span><ArrowUpRight size={16} aria-hidden /></Link>)}
+      {models.map((model) => <Link key={model.id} href={`/models/${model.id}`}><span>{model.name}</span><ArrowUpRight size={16} aria-hidden /></Link>)}
     </nav>
     <div className="frontier-cards">
-      {FRONTIER_MODELS.map((model) => (
+      {models.map((model) => (
         <article className="frontier-card" key={model.id} style={{ ["--provider-accent" as string]: getProviderMeta(model.provider).accentVar }}>
           <div className="frontier-lab"><span className="provider-dot" aria-hidden />{model.lab}</div>
           <h3><Link href={`/models/${model.id}`}>{model.name}<ArrowUpRight size={20} aria-hidden /></Link></h3>

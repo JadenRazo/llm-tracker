@@ -23,7 +23,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { isProvider } from "@/lib/providers";
-import { frontierModel } from "@/lib/frontier-models";
+
 
 // Non-provider top-level segments that must pass through untouched: the legacy
 // sources are 308-redirected by next.config (which runs *after* middleware) —
@@ -68,9 +68,9 @@ export function isUnknownPath(pathname: string): boolean {
 
   const [first, second] = segments;
 
-  // /models still owns its legacy redirect; only curated profile IDs are valid.
+  // Model existence is database-owned. Edge middleware validates only path shape.
   if (first === "models" && segments.length > 1)
-    return segments.length !== 2 || !frontierModel(second);
+    return segments.length !== 2 || !/^(?:claude|gpt|gemini)-[a-z0-9.-]{1,90}$/.test(second);
 
   // Legacy redirect roots pass straight through to next.config's 308s.
   if (LEGACY_REDIRECT_ROOTS.has(first)) return false;

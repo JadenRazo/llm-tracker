@@ -15,6 +15,18 @@ jobs:
     name: Typecheck, lint, build
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: frontier_test
+          POSTGRES_USER: frontier_test
+          POSTGRES_PASSWORD: frontier_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U frontier_test -d frontier_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
     env:
       NEXT_TELEMETRY_DISABLED: "1"
     steps:
@@ -47,6 +59,11 @@ jobs:
 
       - name: Navigation, activity, and catalog regressions
         run: npm run test:ui
+
+      - name: Frontier extraction, migration and recovery regressions
+        run: npm run test:frontier
+        env:
+          FRONTIER_TEST_DATABASE_URL: postgresql://frontier_test:frontier_test@127.0.0.1:5432/frontier_test
 
       # No DATABASE_URL on purpose — the build must not need VPC access to the
       # production database. That is exactly why the next step exists: with no
