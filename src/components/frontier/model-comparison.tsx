@@ -26,7 +26,12 @@ export function ModelComparison({ asOf }: { asOf: string }) {
     <>
       <fieldset className="comparison-picker">
         <legend>Choose two or three models</legend>
-        <div>{FRONTIER_MODELS.map((model) => <label key={model.id} style={{ ["--provider-accent" as string]: getProviderMeta(model.provider).accentVar }}><input type="checkbox" checked={models.some((m) => m.id === model.id)} onChange={() => toggle(model.id)} /><span><span className="frontier-lab">{model.lab}</span><strong>{model.name}</strong></span></label>)}</div>
+        <div>{FRONTIER_MODELS.map((model) => (
+          <div key={model.id} className="comparison-model-option" style={{ ["--provider-accent" as string]: getProviderMeta(model.provider).accentVar }}>
+            <label><input type="checkbox" checked={models.some((m) => m.id === model.id)} onChange={() => toggle(model.id)} /><span><span className="frontier-lab">{model.lab}</span><strong>{model.name}</strong></span></label>
+            <Link className="comparison-profile-link" href={`/models/${model.id}`} aria-label={`Read ${model.name} profile`}>Profile <ArrowUpRight size={14} aria-hidden /></Link>
+          </div>
+        ))}</div>
       </fieldset>
       <div className="comparison-toolbar"><p role="status">{models.length} of {FRONTIER_MODELS.length} models selected</p><label><input type="checkbox" checked={differences} onChange={(event) => setDifferences(event.target.checked)} />Show differences only</label></div>
       {models.length < 2 ? <div className="comparison-empty"><h2>{models.length === 0 ? "Choose your first two models." : "Add one more model to compare."}</h2><p>Select models above to compare their strengths, limits, and pricing side by side.</p></div> : <>

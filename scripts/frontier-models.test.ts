@@ -34,8 +34,8 @@ test("differences are recalculated for the selected pair, including equal prices
 });
 
 test("review age uses the editorial source date, with an exact 30-day boundary", () => {
-  assert.equal(profileNeedsReview(new Date("2026-11-11T23:59:59Z")), false);
-  assert.equal(profileNeedsReview(new Date("2026-11-12T00:00:00Z")), true);
+  assert.equal(profileNeedsReview(new Date("2026-11-12T23:59:59Z")), false);
+  assert.equal(profileNeedsReview(new Date("2026-11-13T00:00:00Z")), true);
 });
 
 test("new routes pass middleware while unknown profiles and nested comparison paths hard-404", () => {

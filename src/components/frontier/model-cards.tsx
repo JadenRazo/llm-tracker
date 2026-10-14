@@ -5,6 +5,10 @@ import { getProviderMeta } from "@/lib/provider-meta";
 
 export function FrontierModelCards({ asOf }: { asOf: string }) {
   return (
+    <>
+    <nav className="frontier-quick-links" aria-label="Frontier model profiles">
+      {FRONTIER_MODELS.map((model) => <Link key={model.id} href={`/models/${model.id}`}><span>{model.name}</span><ArrowUpRight size={16} aria-hidden /></Link>)}
+    </nav>
     <div className="frontier-cards">
       {FRONTIER_MODELS.map((model) => (
         <article className="frontier-card" key={model.id} style={{ ["--provider-accent" as string]: getProviderMeta(model.provider).accentVar }}>
@@ -21,5 +25,6 @@ export function FrontierModelCards({ asOf }: { asOf: string }) {
         </article>
       ))}
     </div>
+    </>
   );
 }
