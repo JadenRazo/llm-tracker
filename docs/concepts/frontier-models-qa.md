@@ -17,7 +17,7 @@ they do not establish production ingestion health.
 | Navigation | Task guidance, profile pairs, mobile menu/Escape/focus restoration passed |
 | Route and metadata behavior | Unknown/dotted/nested model URLs return 404; legacy `/models` redirect preserved; profile/compare canonical and Open Graph URLs checked |
 | Database unavailable | Profiles stay visible; update feed reports unavailable |
-| Independent review | Initial four P2 findings corrected; final review pending |
+| Independent review | Astra medium: technically ready for draft PR, visual accept; no remaining P1/P2 blockers |
 
 Chromium and WebKit covered `/`, `/compare` and all three profile pages at 375,
 412, 430, 768, 1024, 1280 and 1440px. Accessibility audits covered home, comparison
@@ -36,6 +36,12 @@ dates presented as pricing verification dates, inherited homepage social metadat
 and dotted IDs bypassing middleware. The corrected build shows material price
 conditions, actual source-check dates, page-specific metadata and strict profile
 404 handling. No production settings or data were changed.
+
+The final reviewer accepted the existing identity and the model-first hierarchy,
+including mobile comparisons organized by attribute. It suggested compact mobile
+profile links as optional future refinement. Two auxiliary opening captures were
+found to show loading skeletons; the capture helper now waits for page content.
+The committed comparison-depth and full-page captures already showed settled UI.
 
 Evidence: `/tmp/llm-frontier-evidence/` contains build/prerender/test logs, both
 browser attempts, settled WebKit results, source and final review records, native
