@@ -18,7 +18,7 @@ import { getProviderMeta } from "@/lib/provider-meta";
 import { FrontierModelCards } from "@/components/frontier/model-cards";
 import { FrontierSourceNote } from "@/components/frontier/source-note";
 import { TaskGuide } from "@/components/frontier/task-guide";
-import { FRONTIER_REVIEW_LABEL, profileNeedsReview } from "@/lib/frontier-models";
+import { getFrontierData } from "@/lib/frontier/read";
 
 export const metadata: Metadata = {
   title: {
@@ -105,15 +105,19 @@ export default function HomePage() {
         </div>
         <div className="frontier-intro-actions"><Link href="/compare" className="frontier-button">Compare models <ArrowRight size={18} aria-hidden /></Link><a href="#latest-updates" className="frontier-secondary">Catch up on releases ↓</a></div>
       </section>
-      <section aria-labelledby="frontier-heading"><div className="dashboard-section-heading"><h2 id="frontier-heading">{profileNeedsReview(now) ? "Frontier model profiles" : "The frontier lineup"}</h2><span>One frontier pick per lab · Checked {FRONTIER_REVIEW_LABEL}</span></div><FrontierModelCards asOf={asOf} /><FrontierSourceNote asOf={asOf} /></section>
-      <TaskGuide />
+      <Suspense fallback={<p role="status" className="comparison-explainer">Loading verified model profiles…</p>}><FrontierOpening asOf={asOf} /></Suspense>
       <div className="frontier-updates-heading" id="latest-updates"><div><p className="intro-kicker">Keep up with what changes</p><h2>Meanwhile, in AI.</h2></div><Link href="/subscribe" className="intro-subscribe"><Rss size={16} aria-hidden />Follow the feed <ArrowUpRight size={16} aria-hidden /></Link></div>
       <Suspense fallback={<p className="comparison-explainer" role="status">Loading the latest updates…</p>}><LatestUpdates /></Suspense>
     </div>
   );
 }
 
-// Stream the curated opening immediately, even when live ingestion reads lag.
+async function FrontierOpening({ asOf }: { asOf: string }) {
+  const data = await getFrontierData();
+  return <><section aria-labelledby="frontier-heading"><div className="dashboard-section-heading"><h2 id="frontier-heading">The frontier lineup</h2><span>One frontier pick per lab · Checked every two hours</span></div><FrontierModelCards asOf={asOf} models={data.current} /><FrontierSourceNote models={data.current} /></section><TaskGuide models={data.current} asOf={asOf} /></>;
+}
+
+// Feed reads are independent of the shared frontier snapshot.
 async function LatestUpdates() {
   const [feed, versions] = await Promise.all([
     loadCrossProviderFeed(),

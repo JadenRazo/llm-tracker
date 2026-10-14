@@ -20,6 +20,7 @@
 import { NextResponse } from "next/server";
 import { sql } from "drizzle-orm";
 import { tryGetDb } from "@/lib/db";
+import { frontierHealth } from "@/lib/frontier/health";
 import { SOURCE_REGISTRY } from "@/lib/sources/registry";
 
 export const runtime = "nodejs";
@@ -99,7 +100,15 @@ export async function GET(): Promise<NextResponse> {
       .filter((k) => !known.has(k))
       .sort();
 
+    const stale = SOURCE_REGISTRY.filter((d) => {
+      const row = rows.find((r) => r.source === d.key);
+      const cadence = { 1: 600, 2: 1800, 3: 7200 }[d.tier];
+      return row && now - new Date(row.startedAt).getTime() >= cadence * 3 * 1000;
+    }).map((d) => d.key);
+    const frontier = await frontierHealth(db).catch(() => ({ ok: false, providers: [], reason: "Frontier state unavailable" }));
     const reasons: string[] = [];
+    if (!frontier.ok) reasons.push("frontier profiles need attention");
+    if (stale.length) reasons.push(`sources stale: ${stale.join(", ")}`);
     if (lastPollAgeSeconds === null) reasons.push("no poller run recorded");
     else if (lastPollAgeSeconds > MAX_POLL_AGE_SECONDS) {
       reasons.push(`no poller run in ${lastPollAgeSeconds}s`);
@@ -113,7 +122,8 @@ export async function GET(): Promise<NextResponse> {
         db: "up",
         lastPollAt: lastPollAt?.toISOString() ?? null,
         lastPollAgeSeconds,
-        sources: { total: SOURCE_REGISTRY.length, failing, neverRan },
+        sources: { total: SOURCE_REGISTRY.length, failing, neverRan, stale },
+        frontier,
         ...(reasons.length > 0 ? { reasons } : {}),
       },
       { headers },

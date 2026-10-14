@@ -19,6 +19,10 @@
 // docker-compose path and stays as it is; on Lambda `DISABLE_CRON=1` and
 // EventBridge owns the cadence.
 
+import { migrateFrontier } from "@/lib/frontier/migration";
+import { frontierHealth } from "@/lib/frontier/health";
+import { restoreFrontier } from "@/lib/frontier/sync";
+import { frontierProviders, type FrontierProvider } from "@/lib/frontier/schema";
 import { sql } from "drizzle-orm";
 import { getDb } from "@/lib/db";
 import { sourcesForTier, type SourceTier } from "@/lib/sources/registry";
@@ -38,6 +42,9 @@ export const TIER_SOURCE_COUNTS: Record<number, number> = {
 };
 
 interface PollerEvent {
+  frontierMaintenance?: "migrate-v1" | "status" | "restore" | "resume";
+  provider?: FrontierProvider;
+  revisionId?: string;
   /** Optional override, mainly for a manual `aws lambda invoke` smoke test. */
   tier?: number;
   /**
@@ -71,7 +78,19 @@ function resolveTier(event: PollerEvent | undefined): SourceTier {
   );
 }
 
-export async function handler(event?: PollerEvent): Promise<PollerResult> {
+export async function handler(event?: PollerEvent) {
+  if (event?.frontierMaintenance) {
+    if (event.sourceKey || event.tier) throw new Error("Maintenance cannot be combined with polling");
+    if (event.frontierMaintenance === "migrate-v1") return migrateFrontier();
+    if (event.frontierMaintenance === "status") return frontierHealth(getDb());
+    if (!event.provider || !frontierProviders.includes(event.provider)) throw new Error("Invalid recovery provider");
+    if (event.frontierMaintenance === "restore") return restoreFrontier(event.provider, event.revisionId ?? "");
+    if (event.frontierMaintenance === "resume") {
+      await getDb().execute(sql`update frontier_states set paused = false, error = 'Awaiting verification after recovery' where provider = ${event.provider}`);
+      return { ok: true, provider: event.provider, paused: false };
+    }
+    throw new Error("Unknown frontier maintenance operation");
+  }
   const tier = resolveTier(event);
 
   let keys: SourceKey[];

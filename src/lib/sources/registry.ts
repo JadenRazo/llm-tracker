@@ -28,6 +28,9 @@ export type SourceKey =
   | "npm_claude_code"
   | "anthropic_status"
   | "anthropic_models"
+  | "frontier_claude"
+  | "frontier_openai"
+  | "frontier_gemini"
   | "github_releases_claude_code"
   | "github_releases_sdk_python"
   | "github_releases_sdk_typescript"
@@ -93,6 +96,7 @@ import { openaiCodexReferenceSource } from "@/lib/sources/openai/openai_codex_re
 import { openaiCodexReleasesSource } from "@/lib/sources/openai/openai_codex_releases";
 import { openaiNewsSource } from "@/lib/sources/openai/openai_news";
 import { openaiStatusSource } from "@/lib/sources/openai/openai_status";
+import { syncFrontier } from "@/lib/frontier/sync";
 
 /**
  * The canonical source list. Order within a tier preserves the pre-refactor
@@ -131,6 +135,9 @@ export const SOURCE_REGISTRY: readonly SourceDescriptor[] = [
   geminiModelsSource,
   openaiModelsSource,
   openaiNewsSource,
+  { key: "frontier_claude", provider: "claude", tier: 3, run: () => syncFrontier("claude") },
+  { key: "frontier_openai", provider: "openai", tier: 3, run: () => syncFrontier("openai") },
+  { key: "frontier_gemini", provider: "gemini", tier: 3, run: () => syncFrontier("gemini") },
 ] as const;
 
 const REGISTRY_BY_KEY: ReadonlyMap<string, SourceDescriptor> = new Map(

@@ -109,43 +109,6 @@ jobs:
           aws s3 sync ./extracted-static "s3://${ASSETS_BUCKET}/_next/static" \
             --cache-control "public, max-age=31536000, immutable"
 
-      - name: Update Lambda function code
-        env:
-          SHA: ${{ steps.sha.outputs.sha }}
-        run: |
-          # >/dev/null is load-bearing: update-function-code returns the whole
-          # FunctionConfiguration, environment variables included, and the runner
-          # does not mask ADMIN_TOKEN. Without this the deploy log prints a live
-          # credential. The poller update below discards its output for the same
-          # reason.
-          aws lambda update-function-code \
-            --function-name "${FUNCTION_NAME}" \
-            --image-uri "${ECR_IMAGE}:${SHA}" \
-            --architectures arm64 \
-            --no-cli-pager >/dev/null
-
-      - name: Wait for Lambda update to succeed
-        run: |
-          for i in $(seq 1 60); do
-            STATUS=$(aws lambda get-function-configuration \
-              --function-name "${FUNCTION_NAME}" \
-              --query LastUpdateStatus --output text)
-            echo "LastUpdateStatus: ${STATUS} (attempt ${i})"
-            case "${STATUS}" in
-              Successful) exit 0 ;;
-              Failed)
-                aws lambda get-function-configuration \
-                  --function-name "${FUNCTION_NAME}" \
-                  --query '{Status:LastUpdateStatus,Reason:LastUpdateStatusReason,Code:LastUpdateStatusReasonCode}' \
-                  --output json
-                echo "::error::Lambda update failed"
-                exit 1 ;;
-              *) sleep 5 ;;
-            esac
-          done
-          echo "::error::Timed out waiting for Lambda update to complete"
-          exit 1
-
       # The three scheduled poller Lambdas are Zip functions, separate from the
       # web container image. Until now they had NO deploy path in this repo —
       # they were hand-uploaded artifacts last modified 2026-06-22 — so every
@@ -185,7 +148,16 @@ jobs:
             done
           done
 
-      # Run each tier once, synchronously. Three jobs at once: it proves the new
+      - name: Apply additive frontier schema
+        run: |
+          OUT=$(mktemp)
+          ERROR=$(aws lambda invoke --function-name raizcloud-claude-tracker-poller-t3 \
+            --cli-binary-format raw-in-base64-out --payload '{"frontierMaintenance":"migrate-v1"}' \
+            --query FunctionError --output text "${OUT}")
+          [ "${ERROR}" = "None" ] || { cat "${OUT}"; exit 1; }
+          node -e 'const r=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")); if(r.ok!==true || r.migration!=="frontier-v1") process.exit(1)' "${OUT}"
+
+      # Run each tier once, synchronously. The new sources defer safely before schema setup; it proves the new
       # poller code actually executes in the VPC (a bundling mistake shows up
       # here, not silently 30 minutes later); it populates the rows the smoke
       # test asserts on (EventBridge would not fire T2 for up to 30 minutes); and
@@ -213,6 +185,52 @@ jobs:
             fi
             node scripts/assert-poller-invoke.mjs "${FN}" "${OUT}"
           done
+
+      - name: Require accepted frontier data before switching web
+        run: |
+          OUT=$(mktemp)
+          ERROR=$(aws lambda invoke --function-name raizcloud-claude-tracker-poller-t3 \
+            --cli-binary-format raw-in-base64-out --payload '{"frontierMaintenance":"status"}' \
+            --query FunctionError --output text "${OUT}")
+          [ "${ERROR}" = "None" ] || { cat "${OUT}"; exit 1; }
+          node scripts/assert-frontier-status.mjs "${OUT}"
+
+      - name: Update Lambda function code
+        env:
+          SHA: ${{ steps.sha.outputs.sha }}
+        run: |
+          # >/dev/null is load-bearing: update-function-code returns the whole
+          # FunctionConfiguration, environment variables included, and the runner
+          # does not mask ADMIN_TOKEN. Without this the deploy log prints a live
+          # credential. The poller update below discards its output for the same
+          # reason.
+          aws lambda update-function-code \
+            --function-name "${FUNCTION_NAME}" \
+            --image-uri "${ECR_IMAGE}:${SHA}" \
+            --architectures arm64 \
+            --no-cli-pager >/dev/null
+
+      - name: Wait for Lambda update to succeed
+        run: |
+          for i in $(seq 1 60); do
+            STATUS=$(aws lambda get-function-configuration \
+              --function-name "${FUNCTION_NAME}" \
+              --query LastUpdateStatus --output text)
+            echo "LastUpdateStatus: ${STATUS} (attempt ${i})"
+            case "${STATUS}" in
+              Successful) exit 0 ;;
+              Failed)
+                aws lambda get-function-configuration \
+                  --function-name "${FUNCTION_NAME}" \
+                  --query '{Status:LastUpdateStatus,Reason:LastUpdateStatusReason,Code:LastUpdateStatusReasonCode}' \
+                  --output json
+                echo "::error::Lambda update failed"
+                exit 1 ;;
+              *) sleep 5 ;;
+            esac
+          done
+          echo "::error::Timed out waiting for Lambda update to complete"
+          exit 1
 
       # Invalidate the CDN so the new Cache-Control actually takes effect.
       #
@@ -270,3 +288,6 @@ jobs:
             || fail "Smoke test failed — /rss.xml contains no items"
 
           echo "Deploy verified: ${SITE_URL} is serving live data."
+
+      - name: Verify published frontier revisions
+        run: node scripts/verify-frontier-live.mjs "${SITE_URL}"
