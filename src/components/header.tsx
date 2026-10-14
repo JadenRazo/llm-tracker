@@ -156,8 +156,9 @@ export function Header({ contentAvailability }: HeaderProps = {}) {
             aria-current={pathname === "/" ? "page" : undefined}
             className={clsx("overview-link", pathname === "/" && "is-current")}
           >
-            Overview
+            Frontier
           </Link>
+          <Link href="/compare" aria-current={pathname === "/compare" ? "page" : undefined} className={clsx("overview-link", pathname === "/compare" && "is-current")}>Compare</Link>
           {providerLinks()}
         </div>
         <Link
@@ -235,8 +236,9 @@ export function Header({ contentAvailability }: HeaderProps = {}) {
             aria-current={pathname === "/" ? "page" : undefined}
             className="mobile-overview"
           >
-            All providers · Overview
+            Frontier models
           </Link>
+          <Link href="/compare" onClick={() => setOpen(false)} aria-current={pathname === "/compare" ? "page" : undefined} className="mobile-overview">Compare models</Link>
           {providerLinks(true)}
           <p className="mb-2 mt-6 text-ui-sm text-[var(--color-text-muted)]">
             Explore {getProviderMeta(linkProvider).label}

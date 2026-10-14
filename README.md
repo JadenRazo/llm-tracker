@@ -3,6 +3,13 @@
 Public, read-only multi-LLM dashboard served at `llm.raizhost.com` (the old
 `claude.raizhost.com` 301-redirects here).
 
+The homepage opens with sourced frontier model profiles. Open a model to see
+its strengths, tradeoffs and official documentation, or use `/compare` to put
+any two or all three side by side. Comparisons can be bookmarked or shared using
+their URL. Profiles and task guidance are curated; the release feed and provider
+catalogs still use scheduled ingestion. See [profile maintenance](content/frontier-models.md)
+before updating a featured model or its pricing.
+
 Tracks what's shipping across **Claude, OpenAI, and Gemini** — Claude Code and
 Codex are the coding headliners. Polls a tiered set of per-provider data
 sources (npm, GitHub, provider APIs, docs, status pages) on a schedule and

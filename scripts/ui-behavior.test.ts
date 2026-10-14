@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import "./frontier-models.test";
 import { isSectionActive, swapProviderInPath } from "@/lib/provider-route";
 import { PROVIDERS } from "@/lib/providers";
 import { stableCliVersion } from "@/lib/stable-cli";

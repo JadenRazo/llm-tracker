@@ -72,6 +72,14 @@ const nextConfig: NextConfig = {
         ],
       },
       {
+        source: "/compare",
+        headers: [{ key: "Cache-Control", value: "public, s-maxage=120, stale-while-revalidate=300" }],
+      },
+      {
+        source: "/models/:model",
+        headers: [{ key: "Cache-Control", value: "public, s-maxage=120, stale-while-revalidate=300" }],
+      },
+      {
         source: "/:provider(claude|openai|gemini)",
         headers: [
           { key: "Cache-Control", value: "public, s-maxage=120, stale-while-revalidate=300" },
