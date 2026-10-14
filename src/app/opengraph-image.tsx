@@ -1,7 +1,7 @@
 import { ImageResponse } from "next/og";
 
 export const alt =
-  "LLM Tracker: releases, models, and developer tools across Claude, OpenAI, and Gemini";
+  "LLM Tracker: compare frontier models from Claude, OpenAI, and Gemini";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
@@ -25,10 +25,10 @@ export default function OpenGraphImage() {
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
           <div style={{ fontSize: 76, lineHeight: 1.1, letterSpacing: -3 }}>
-            A clearer view of what’s shipping.
+            Meet the frontier. Find your model.
           </div>
           <div style={{ fontSize: 28, color: "#cbd2c4" }}>
-            Releases, models, and developer tools.
+            Understand the strengths. Compare the tradeoffs.
           </div>
         </div>
         <div

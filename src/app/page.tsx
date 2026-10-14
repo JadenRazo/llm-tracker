@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import Link from "next/link";
 import { ArrowRight, ArrowUpRight, BookOpen, Clock, Rss } from "lucide-react";
 import { and, eq, inArray, ne, or, sql } from "drizzle-orm";
@@ -14,13 +15,18 @@ import { DataUnavailable } from "@/components/ui/data-unavailable";
 import type { LoadResult } from "@/lib/load-result";
 import { PROVIDERS } from "@/lib/providers";
 import { getProviderMeta } from "@/lib/provider-meta";
+import { FrontierModelCards } from "@/components/frontier/model-cards";
+import { FrontierSourceNote } from "@/components/frontier/source-note";
+import { TaskGuide } from "@/components/frontier/task-guide";
+import { FRONTIER_REVIEW_LABEL, profileNeedsReview } from "@/lib/frontier-models";
 
 export const metadata: Metadata = {
   title: {
-    absolute: "LLM Tracker — what's shipping across Claude, OpenAI & Gemini",
+    absolute: "LLM Tracker — compare frontier AI models",
   },
   description:
-    "Follow releases, model catalogs, developer tools, and provider status across Claude, OpenAI, and Gemini. Search recent updates and explore each provider.",
+    "Understand the frontier models from Claude, OpenAI, and Gemini. Compare strengths, tradeoffs, capabilities, and pricing, then follow the latest releases.",
+  openGraph: { title: "LLM Tracker — compare frontier AI models", description: "Explore the models. Understand the tradeoffs. Choose for your work." },
 };
 
 // Live DB reads; bounded caching remains owned by next.config.ts.
@@ -81,34 +87,39 @@ async function loadCrossProviderFeed(): Promise<LoadResult<Event>> {
   }
 }
 
-export default async function HomePage() {
-  const [feed, versions] = await Promise.all([
-    loadCrossProviderFeed(),
-    Promise.all(
-      PROVIDERS.map(async (provider) =>
-        stableCliVersion(await getCurrentCliVersion(provider)),
-      ),
-    ),
-  ]);
+export default function HomePage() {
+  const now = new Date();
+  const asOf = now.toISOString().slice(0, 10);
   return (
     <div className="overview-page">
-      <section className="overview-intro">
+      <section className="frontier-intro frontier-home-intro">
         <div>
-          <p className="intro-kicker">Claude · OpenAI · Gemini</p>
+          <p className="intro-kicker">Three labs. A clearer choice.</p>
           <h1>
-            A clearer view of <span>what’s shipping.</span>
+            Meet the frontier.<br /><span>Find your model.</span>
           </h1>
           <p className="intro-description">
-            Releases, models, and developer tools. The changes worth catching,
-            in one place.
+            The leading models from Claude, OpenAI, and Gemini. See what each
+            brings to your work—and where the tradeoffs begin.
           </p>
         </div>
-        <Link href="/subscribe" className="intro-subscribe">
-          <Rss size={16} aria-hidden />
-          Follow the feed
-          <ArrowUpRight size={16} aria-hidden />
-        </Link>
+        <div className="frontier-intro-actions"><Link href="/compare" className="frontier-button">Compare models <ArrowRight size={18} aria-hidden /></Link><a href="#latest-updates" className="frontier-secondary">Catch up on releases ↓</a></div>
       </section>
+      <section aria-labelledby="frontier-heading"><div className="dashboard-section-heading"><h2 id="frontier-heading">{profileNeedsReview(now) ? "Frontier model profiles" : "The frontier lineup"}</h2><span>One frontier pick per lab · Checked {FRONTIER_REVIEW_LABEL}</span></div><FrontierModelCards asOf={asOf} /><FrontierSourceNote asOf={asOf} /></section>
+      <TaskGuide />
+      <div className="frontier-updates-heading" id="latest-updates"><div><p className="intro-kicker">Keep up with what changes</p><h2>Meanwhile, in AI.</h2></div><Link href="/subscribe" className="intro-subscribe"><Rss size={16} aria-hidden />Follow the feed <ArrowUpRight size={16} aria-hidden /></Link></div>
+      <Suspense fallback={<p className="comparison-explainer" role="status">Loading the latest updates…</p>}><LatestUpdates /></Suspense>
+    </div>
+  );
+}
+
+// Stream the curated opening immediately, even when live ingestion reads lag.
+async function LatestUpdates() {
+  const [feed, versions] = await Promise.all([
+    loadCrossProviderFeed(),
+    Promise.all(PROVIDERS.map(async (provider) => stableCliVersion(await getCurrentCliVersion(provider)))),
+  ]);
+  return (
       <div className="overview-grid">
         <section className="min-w-0" aria-labelledby="activity-heading">
           <div className="dashboard-section-heading">
@@ -207,6 +218,5 @@ export default async function HomePage() {
           </section>
         </aside>
       </div>
-    </div>
   );
 }

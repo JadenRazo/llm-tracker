@@ -23,6 +23,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { isProvider } from "@/lib/providers";
+import { frontierModel } from "@/lib/frontier-models";
 
 // Non-provider top-level segments that must pass through untouched: the legacy
 // sources are 308-redirected by next.config (which runs *after* middleware) —
@@ -56,9 +57,9 @@ const PROVIDER_SUBPAGES = new Set([
 // explicit 404 status below.
 const HARD_404_TARGET = "/claude/guides/__hard_404__";
 
-function isUnknownPath(pathname: string): boolean {
+export function isUnknownPath(pathname: string): boolean {
   // Source-owned pages and extensionless metadata routes.
-  if (pathname === "/opengraph-image" || pathname === "/subscribe")
+  if (pathname === "/opengraph-image" || pathname === "/subscribe" || pathname === "/compare")
     return false;
   const segments = pathname.split("/").filter(Boolean);
 
@@ -66,6 +67,10 @@ function isUnknownPath(pathname: string): boolean {
   if (segments.length === 0) return false;
 
   const [first, second] = segments;
+
+  // /models still owns its legacy redirect; only curated profile IDs are valid.
+  if (first === "models" && segments.length > 1)
+    return segments.length !== 2 || !frontierModel(second);
 
   // Legacy redirect roots pass straight through to next.config's 308s.
   if (LEGACY_REDIRECT_ROOTS.has(first)) return false;
@@ -94,5 +99,5 @@ export const config = {
   // Run on everything except API routes, Next internals, and static assets
   // (any path segment containing a dot, e.g. favicon.ico, *.png). Keeps the
   // middleware off infra paths entirely; the catch-all backstops the rest.
-  matcher: ["/((?!api|_next/static|_next/image|.*\\.).*)"],
+  matcher: ["/((?!api|_next/static|_next/image|.*\\.).*)", "/models/:path*", "/compare/:path*"],
 };
