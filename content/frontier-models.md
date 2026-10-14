@@ -15,19 +15,29 @@ price advantage changes. Do not carry an older model's recommendations forward
 based on a similar name. Avoid claiming a cross-lab winner without comparable
 independent evaluation evidence.
 
-Sources checked **2026-10-13**:
+Sources checked **2026-10-14**:
 
 - [Claude lineup](https://platform.claude.com/docs/en/models/overview) and
   [Fable 5.1](https://platform.claude.com/docs/en/models/fable-5-1/overview).
   Fable is the demanding-work pick; Anthropic recommends Opus 5.5 for most work.
+  [PDF support](https://platform.claude.com/docs/en/build-with-claude/pdf-support)
+  covers all active models; [effort controls](https://platform.claude.com/docs/en/build-with-claude/effort)
+  include all five levels on Fable 5.1, alongside always-on adaptive thinking.
 - [OpenAI lineup](https://developers.openai.com/api/docs/models) and
   [Astra](https://developers.openai.com/api/docs/models/gpt-6-astra).
   Standard rates rise for requests exceeding 272K input tokens.
+  [File inputs](https://developers.openai.com/api/docs/guides/file-inputs)
+  include PDF text and page images on vision-capable models such as Astra.
 - [Gemini lineup](https://ai.google.dev/gemini-api/docs/models),
   [Argon](https://ai.google.dev/gemini-api/docs/models/gemini-4-argon) and
   [pricing](https://ai.google.dev/gemini-api/docs/pricing#gemini-4-argon).
   Argon has a shared input/output budget and a separate long-decode mode.
   Introductory prices end November 30; the data includes December rates.
+
+The input row includes modalities and PDF documents consistently across all
+three APIs. PDF support is not a Gemini-only distinction; file and page limits
+remain provider-specific. Compare like capabilities when selecting facts for
+each column, rather than copying differently scoped provider summaries.
 
 After 30 days the UI displays a review-due notice; this does not automatically
 refresh content or verify continued availability. No new poller or paid model

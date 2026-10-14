@@ -2,7 +2,7 @@ import type { Provider } from "@/lib/providers";
 
 // Editorial profiles: official sources checked by a person/agent, not inferred
 // from ingestion timestamps or model names. See content/frontier-models.md.
-export const FRONTIER_REVIEWED_AT = "2026-10-13";
+export const FRONTIER_REVIEWED_AT = "2026-10-14";
 export const FRONTIER_REVIEW_DAYS = 30;
 export const FRONTIER_REVIEW_LABEL = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" }).format(new Date(`${FRONTIER_REVIEWED_AT}T00:00:00Z`));
 
@@ -31,12 +31,14 @@ export const FRONTIER_MODELS: readonly FrontierModel[] = [
     summary: "For difficult reasoning, multistep research, and work that spans many tool calls.",
     why: "Anthropic positions Fable for demanding tasks where Opus at higher effort still falls short. Adaptive thinking stays on throughout the work.",
     tradeoff: "Anthropic lists slower latency than Opus. Start with Opus 5.5 for most workloads; justify Fable’s higher cost with your own results.",
-    context: "1M tokens", output: "128K tokens", inputs: "Text, images", reasoning: "Adaptive thinking, always on",
+    context: "1M tokens", output: "128K tokens", inputs: "Text, images, PDF", reasoning: "Low, medium, high, xhigh, max; default high. Adaptive thinking stays on.",
     access: "Claude API and supported cloud platforms",
     price: { input: 10, output: 50, cardNote: "Caching and batch rates differ.", note: "Standard token rates. Caching and batch rates differ." },
     sources: [
       { label: "Model specifications & pricing", url: "https://platform.claude.com/docs/en/models/fable-5-1/overview" },
       { label: "Claude model lineup", url: "https://platform.claude.com/docs/en/models/overview" },
+      { label: "PDF support", url: "https://platform.claude.com/docs/en/build-with-claude/pdf-support" },
+      { label: "Reasoning effort", url: "https://platform.claude.com/docs/en/build-with-claude/effort" },
     ],
   },
   {
@@ -45,12 +47,13 @@ export const FRONTIER_MODELS: readonly FrontierModel[] = [
     summary: "A flagship for complex code, research, and document work with OpenAI’s tools.",
     why: "Five reasoning effort levels let you tune depth. The Responses API supports web and file search, computer use, and code tools.",
     tradeoff: "No native audio or video input. Prompts above 272K input tokens cost more across the full request.",
-    context: "1,050,000 tokens", output: "128K tokens", inputs: "Text, images", reasoning: "Low, medium, high, xhigh, max",
+    context: "1,050,000 tokens", output: "128K tokens", inputs: "Text, images, PDF", reasoning: "Low, medium, high, xhigh, max",
     access: "OpenAI API",
     price: { input: 10, output: 50, cardNote: "Above 272K input: $20 in / $75 out for the full request.", note: "Above 272K input tokens: $20 input / $75 output. Tools and service tiers may add costs." },
     sources: [
       { label: "Model specifications & pricing", url: "https://developers.openai.com/api/docs/models/gpt-6-astra" },
       { label: "OpenAI model lineup", url: "https://developers.openai.com/api/docs/models" },
+      { label: "File and PDF inputs", url: "https://developers.openai.com/api/docs/guides/file-inputs" },
     ],
   },
   {
