@@ -8,11 +8,15 @@
 // Next.js, React, and the whole app tree into a job that only needs the source
 // modules, drizzle, pg and cheerio.
 
-import { build } from "esbuild";
 import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { deflateRawSync, crc32 } from "node:zlib";
 import path from "node:path";
 import { createRequire } from "node:module";
+
+// Foreground packaging must reap its bundler before releasing shared storage.
+// The synchronous service produces the same bundle without a detached worker.
+process.env.ESBUILD_WORKER_THREADS = "0";
+const { buildSync } = await import("esbuild");
 
 /**
  * Minimal ZIP writer (deflate). Written in-process rather than shelling out to
@@ -101,7 +105,7 @@ const outDir = path.join(root, ".poller-build");
 await rm(outDir, { recursive: true, force: true });
 await mkdir(outDir, { recursive: true });
 
-const result = await build({
+const result = buildSync({
   entryPoints: [path.join(root, "src/lib/poller/lambda.ts")],
   outfile: path.join(outDir, "index.js"),
   bundle: true,

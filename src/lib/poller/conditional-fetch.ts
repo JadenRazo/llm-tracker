@@ -41,17 +41,21 @@ export interface ConditionalFetchOptions {
    * upstream that has actually gone wrong.
    */
   maxBodyBytes?: number;
+  /** Use only headers from a successfully recorded run, never an uncommitted
+   * in-memory fetch. Multi-page sources must not skip earlier pages after a
+   * later fetch or database write fails. Existing sources keep their behavior. */
+  persistedCacheOnly?: boolean;
 }
 
 const headerCache = new Map<string, { etag?: string; lastModified?: string }>();
 
-async function loadCacheHeaders(sourceKey: string): Promise<{ etag?: string; lastModified?: string }> {
-  const cached = headerCache.get(sourceKey);
+async function loadCacheHeaders(sourceKey: string, useMemoryCache = true): Promise<{ etag?: string; lastModified?: string }> {
+  const cached = useMemoryCache ? headerCache.get(sourceKey) : undefined;
   if (cached) return cached;
 
   const db = tryGetDb();
   if (!db) {
-    headerCache.set(sourceKey, {});
+    if (useMemoryCache) headerCache.set(sourceKey, {});
     return {};
   }
   try {
@@ -65,10 +69,10 @@ async function loadCacheHeaders(sourceKey: string): Promise<{ etag?: string; las
     const value: { etag?: string; lastModified?: string } = row
       ? { etag: row.etag ?? undefined, lastModified: row.lastModified ?? undefined }
       : {};
-    headerCache.set(sourceKey, value);
+    if (useMemoryCache) headerCache.set(sourceKey, value);
     return value;
   } catch {
-    headerCache.set(sourceKey, {});
+    if (useMemoryCache) headerCache.set(sourceKey, {});
     return {};
   }
 }
@@ -133,7 +137,8 @@ export async function fetchConditional(
   sourceKey: string,
   options: ConditionalFetchOptions = {},
 ): Promise<ConditionalFetchResult> {
-  const { etag, lastModified } = await loadCacheHeaders(sourceKey);
+  const useMemoryCache = !options.persistedCacheOnly;
+  const { etag, lastModified } = await loadCacheHeaders(sourceKey, useMemoryCache);
   const maxRetries = options.maxRetries ?? 2;
   const timeoutMs = options.timeoutMs ?? 30_000;
   const maxBodyBytes = options.maxBodyBytes ?? DEFAULT_MAX_BODY_BYTES;
@@ -168,7 +173,7 @@ export async function fetchConditional(
           lastModified: res.headers.get("last-modified") ?? lastModified,
           unchanged: true,
         };
-        headerCache.set(sourceKey, { etag: result.etag, lastModified: result.lastModified });
+        if (useMemoryCache) headerCache.set(sourceKey, { etag: result.etag, lastModified: result.lastModified });
         return result;
       }
 
@@ -206,7 +211,7 @@ export async function fetchConditional(
         // res.ok with no body can only mean the read hit the cap.
         ...(res.ok && body === undefined ? { oversized: true } : {}),
       };
-      if (res.ok && body !== undefined) {
+      if (useMemoryCache && res.ok && body !== undefined) {
         headerCache.set(sourceKey, { etag: result.etag, lastModified: result.lastModified });
       }
       return result;

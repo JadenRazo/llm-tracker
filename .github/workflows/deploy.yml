@@ -70,6 +70,14 @@ jobs:
             aws lambda get-function-configuration --function-name "${FN}" >/dev/null 2>&1 \
               || fail "role raizcloud-claude-tracker-deploy cannot read poller function ${FN}. Add lambda:UpdateFunctionCode, GetFunctionConfiguration and InvokeFunction on the three raizcloud-claude-tracker-poller-* functions to its inline policy deploy-perms."
           done
+          # Snapshot revisions before building or changing anything. A manual
+          # update outside this workflow must stop this release, not be replaced.
+          umask 077
+          for FN in ${FUNCTION_NAME} ${POLLER_FUNCTIONS}; do
+            aws lambda get-function-configuration --function-name "${FN}" \
+              --query '{RevisionId:RevisionId,CodeSha256:CodeSha256}' --output json \
+              > "${RUNNER_TEMP}/lambda-before-${FN}.json"
+          done
           echo "Pre-flight OK."
 
       - name: Log in to Amazon ECR
@@ -132,6 +140,7 @@ jobs:
             echo "Updating ${FN}"
             aws lambda update-function-code \
               --function-name "${FN}" \
+              --revision-id "$(jq -er '.RevisionId' "${RUNNER_TEMP}/lambda-before-${FN}.json")" \
               --zip-file fileb://poller.zip \
               --no-cli-pager >/dev/null
           done
@@ -206,6 +215,7 @@ jobs:
           # reason.
           aws lambda update-function-code \
             --function-name "${FUNCTION_NAME}" \
+            --revision-id "$(jq -er '.RevisionId' "${RUNNER_TEMP}/lambda-before-${FUNCTION_NAME}.json")" \
             --image-uri "${ECR_IMAGE}:${SHA}" \
             --architectures arm64 \
             --no-cli-pager >/dev/null

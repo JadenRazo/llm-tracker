@@ -1,0 +1,47 @@
+# Keep release ingestion below the response cap
+
+On November 1, the Codex releases poller repeatedly exceeded the shared 10 MiB
+body cap while requesting twenty releases. It then reported the misleading
+error `returned status 200`. This was separate from tracker web throttling.
+Four bounded public reads found five-release pages of 2.44–2.71 MB, each under
+one second, covering twenty distinct tags. No response bodies were retained.
+The query uses GitHub's documented [release pagination parameters](https://docs.github.com/en/rest/releases/releases#list-releases).
+
+The adapter now requests at most four five-release pages from the same endpoint,
+validates every required page before its single idempotent insert, and retains
+the existing twenty-release scope, draft/prerelease policy and link-only output.
+Extra asset metadata is discarded. The 10 MiB cap stays unchanged. Each request
+has a five-second deadline and no automatic retry; failed reads remain failures.
+This bounds HTTP waiting to twenty seconds, excluding cache/database operations.
+
+The first page reuses only the ETag from a successfully recorded source run.
+An unchanged first page ends the run; later pages use separate cache keys.
+Fetch results do not advance an in-memory cache before all pages and the write
+complete. A later-page or database failure therefore cannot make a warm retry
+skip uncommitted releases. Existing callers retain their prior cache behavior.
+
+Run `npm run test:releases` for isolated transport/database fixtures and
+`npm run build:poller` for the actual bundle/load contract. The regression fails
+against the old adapter. Coverage includes oversized/malformed/schema/HTTP and
+network failures, no partial writes, warm retry, persisted ETag, draft/prerelease
+semantics, empty/short pages and duplicate delivery. Tests contact no live service.
+
+The existing protected CI/deploy workflow ships the web image and all three
+poller bundles, runs its normal tier checks and validates published data. Validate
+the source's committed `poller_runs` result and health body after deployment;
+HTTP 200 alone does not establish ingestion success. No extra manual polling or
+schedule is needed. Public API request count is one on an unchanged run, at most
+four on a changed run; account access, concurrency, memory and timeout stay fixed.
+The workflow captures all four function revisions before release work and uses
+those revisions on code updates. An intervening external update stops deployment.
+Local packaging uses a synchronous bundler so the storage owner can confirm all
+children have exited; the switch preserves the exact ZIP bytes.
+
+If the adapter regresses, stop further release work and restore the prior exact
+poller ZIP through the owning revision-guarded Lambda rollback path. Retain its
+artifact hash before release. That prior source is known failing on the large
+response; it is a rollback state, not a healthy ingestion fallback. An executable
+rollback does not remove already committed events. Concurrent upstream releases
+can move page boundaries; existing unique source/tag insertion handles overlap,
+and subsequent scheduled polling handles newly published entries. Do not claim
+this is a historical backfill or an atomic snapshot of GitHub's release list.

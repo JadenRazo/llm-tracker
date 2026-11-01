@@ -19,7 +19,7 @@ const PROVIDER: Provider = "openai";
 const REPO = "openai/codex";
 
 // GitHub releases API is untrusted upstream — validate before reading.
-// .passthrough() so the API's many extra fields don't reject a valid payload.
+// Zod strips extra fields, including large asset metadata we never store.
 const githubReleaseSchema = z
   .object({
     id: z.number(),
@@ -31,8 +31,7 @@ const githubReleaseSchema = z
     prerelease: z.boolean(),
     published_at: z.string().nullable(),
     created_at: z.string(),
-  })
-  .passthrough();
+  });
 
 const githubReleasesSchema = z.array(githubReleaseSchema);
 
@@ -40,39 +39,39 @@ type GithubRelease = z.infer<typeof githubReleaseSchema>;
 
 export async function runOpenaiCodexReleases(): Promise<RunResult> {
   const token = env().GITHUB_TOKEN;
-  const url = `https://api.github.com/repos/${REPO}/releases?per_page=20`;
   const headers: Record<string, string> = {
     Accept: "application/vnd.github+json",
     "X-GitHub-Api-Version": "2022-11-28",
   };
   if (token) headers["Authorization"] = `Bearer ${token}`;
 
-  const res = await fetchConditional(url, SOURCE_KEY, { headers });
-
-  if (res.unchanged) {
-    return { inserted: 0, updated: 0, skipped: 0, status: "unchanged", etag: res.etag, lastModified: res.lastModified };
+  // The twenty-release payload outgrew the shared 10 MiB cap. Preserve the
+  // same scope with at most four five-release pages, without raising the cap.
+  // No page retry: four 5s request deadlines bound HTTP time to 20s. Fetch and
+  // validate every needed page before the single idempotent database write.
+  const releases: GithubRelease[] = [];
+  let etag: string | undefined;
+  let lastModified: string | undefined;
+  for (let page = 1; page <= 4; page++) {
+    const url = `https://api.github.com/repos/${REPO}/releases?per_page=5&page=${page}`;
+    const res = await fetchConditional(url, page === 1 ? SOURCE_KEY : `${SOURCE_KEY}:page-${page}`, {
+      headers, persistedCacheOnly: true, maxRetries: 0, timeoutMs: 5_000,
+    });
+    if (page === 1) {
+      etag = res.etag;
+      lastModified = res.lastModified;
+      if (res.unchanged) return { inserted: 0, updated: 0, skipped: 0, status: "unchanged", etag, lastModified };
+    }
+    if (res.oversized) throw new Error(`${REPO} releases page ${page} exceeded the response body cap`);
+    if (res.unchanged || !res.body || res.status !== 200) throw new Error(`${REPO} releases page ${page} returned unusable status ${res.status}`);
+    let raw: unknown;
+    try { raw = JSON.parse(res.body); }
+    catch { throw new Error(`${REPO} releases page ${page} returned non-JSON body`); }
+    const parsed = githubReleasesSchema.safeParse(raw);
+    if (!parsed.success || parsed.data.length > 5) throw new Error(`${REPO} releases page ${page} failed schema validation`);
+    releases.push(...parsed.data);
+    if (parsed.data.length < 5) break;
   }
-  if (!res.body || res.status >= 400) {
-    throw new Error(`${REPO} releases returned status ${res.status}`);
-  }
-
-  let raw: unknown;
-  try {
-    raw = JSON.parse(res.body);
-  } catch {
-    throw new Error(`${REPO} releases returned non-JSON body`);
-  }
-
-  const parsed = githubReleasesSchema.safeParse(raw);
-  if (!parsed.success) {
-    // eslint-disable-next-line no-console
-    console.warn(
-      `[${SOURCE_KEY}] ${REPO} releases failed schema validation — skipping:`,
-      parsed.error.issues.slice(0, 3),
-    );
-    return { inserted: 0, updated: 0, skipped: 1, status: "skipped" };
-  }
-  const releases: GithubRelease[] = parsed.data;
 
   const db = tryGetDb();
   if (!db) return { inserted: 0, updated: 0, skipped: 1, status: "skipped" };
@@ -80,7 +79,7 @@ export async function runOpenaiCodexReleases(): Promise<RunResult> {
   const publishable = releases.filter((r) => !r.draft);
   const draftSkipped = releases.length - publishable.length;
   if (publishable.length === 0) {
-    return { inserted: 0, updated: 0, skipped: draftSkipped, status: "ok", etag: res.etag, lastModified: res.lastModified };
+    return { inserted: 0, updated: 0, skipped: draftSkipped, status: "ok", etag, lastModified };
   }
 
   const rows = publishable.map((rel) => {
@@ -114,8 +113,8 @@ export async function runOpenaiCodexReleases(): Promise<RunResult> {
     updated: 0,
     skipped: draftSkipped + (publishable.length - inserted.length),
     status: "ok",
-    etag: res.etag,
-    lastModified: res.lastModified,
+    etag,
+    lastModified,
   };
 }
 
