@@ -3,13 +3,13 @@
 // Phase 2.3 makes the site provider-aware. `src/lib/providers.ts` owns the
 // canonical key set / zod enum; this module owns the *UI* and *data-routing*
 // facts that vary per provider: display copy, the flagship coding-tool name,
-// the accent token (kept inside the existing earth/forest palette — no new
-// hues, no gradients), and the source keys each provider's pages read.
+// the brand accents, and the source keys each provider's pages read.
 //
 // Kept fully data-driven so Phase 2.4 can finalize brand copy without
 // touching page components. Source keys are persisted strings — see
 // src/lib/sources/registry.ts; never rename an existing one here.
 
+import type { CSSProperties } from "react";
 import type { Provider } from "@/lib/providers";
 import { PROVIDERS } from "@/lib/providers";
 
@@ -20,12 +20,10 @@ export interface ProviderMeta {
   toolName: string;
   /** One-line working tagline. Provisional copy; 2.4 finalizes brand voice. */
   tagline: string;
-  /**
-   * Accent CSS variable, mapped to an existing palette token. Each provider
-   * gets a distinguishing hue *from the current palette only* — no off-palette
-   * colors, no gradients. Claude keeps its established leaf-green identity.
-   */
+  /** Solid, contrast-safe brand tone for text and controls on dark surfaces. */
   accentVar: string;
+  /** Decorative background: brand color or gradient, never used as text fill. */
+  markVar: string;
   /** Source keys whose events make up the release ladder, npm/CHANGELOG/GH. */
   releaseSources: readonly string[];
   /** Source key for the status snapshot + incident history. */
@@ -55,7 +53,8 @@ export const PROVIDER_META: Record<Provider, ProviderMeta> = {
     toolName: "Claude Code",
     tagline:
       "Claude Code, MCP, and the Anthropic API — version-pinned and re-verified as releases ship.",
-    accentVar: "var(--color-leaf)",
+    accentVar: "var(--color-provider-claude)",
+    markVar: "var(--provider-mark-claude)",
     releaseSources: [
       "npm_claude_code",
       "claude_code_changelog",
@@ -81,7 +80,8 @@ export const PROVIDER_META: Record<Provider, ProviderMeta> = {
     toolName: "Codex",
     tagline:
       "Codex CLI releases and OpenAI platform updates — deduped into one timeline.",
-    accentVar: "var(--color-sage)",
+    accentVar: "var(--color-provider-openai)",
+    markVar: "var(--provider-mark-openai)",
     releaseSources: ["openai_codex_npm", "openai_codex_releases"],
     statusSource: "openai_status",
     newsSource: "openai_news",
@@ -100,7 +100,8 @@ export const PROVIDER_META: Record<Provider, ProviderMeta> = {
     toolName: "Gemini CLI",
     tagline:
       "Gemini CLI releases, changelog, and model catalog — kept current automatically.",
-    accentVar: "var(--color-gold)",
+    accentVar: "var(--color-provider-gemini)",
+    markVar: "var(--provider-mark-gemini)",
     releaseSources: [
       "gemini_cli_npm",
       "gemini_cli_releases",
@@ -125,6 +126,15 @@ export const PROVIDER_META: Record<Provider, ProviderMeta> = {
 
 export function getProviderMeta(provider: Provider): ProviderMeta {
   return PROVIDER_META[provider];
+}
+
+/** Shared by provider pages and mixed-provider surfaces; status colors stay separate. */
+export function getProviderStyle(provider: Provider): CSSProperties {
+  const { accentVar, markVar } = getProviderMeta(provider);
+  return {
+    "--provider-accent": accentVar,
+    "--provider-mark": markVar,
+  } as CSSProperties;
 }
 
 /** Display order for switchers / the cross-provider home (Claude first). */

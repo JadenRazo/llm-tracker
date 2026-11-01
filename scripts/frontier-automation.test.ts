@@ -76,6 +76,28 @@ test("identity, source drift, malformed limits and unrecognized prices hold publ
   const nestedGemini=docs("gemini");const g=cheerio.load(nestedGemini[2].body);g('section').filter((_,el)=>g(el).find('h3').first().text()==='Standard').find('table').append('<tfoot><tr><td colspan="3">Prompts above 200K tokens incur a surcharge of 2x.</td></tr></tfoot>');nestedGemini[2].body=g.html();assert.throws(()=>parse("gemini",nestedGemini),/pricing footnote/);
 });
 
+test("Gemini accepts reviewed search billing notes without mixing Contributor access into Standard", () => {
+  const documents = docs("gemini");
+  documents[2].body = readFileSync("scripts/fixtures/frontier/gemini-pricing-2026-11-01.html", "utf8");
+  documents[2].hash = documentHash(documents[2].body);
+  const facts = parse("gemini", documents);
+  assert.equal(facts.pricing.input, 2);
+  assert.equal(facts.pricing.output, 10);
+  assert.deepEqual(facts.pricing.changes, [{ effectiveAt: "2026-12-01", input: 4, output: 20 }]);
+  assert.equal(facts.access, "Paid Gemini API; unavailable on the free tier");
+  assert.match(facts.pricing.note, /internal tool system instructions/);
+  assert.match(facts.pricing.note, /per individual search query/);
+
+  for (const change of [
+    (body: string) => body.replace("each individual search query", "each individual search query plus an extra token surcharge"),
+    (body: string) => body.replace("Standard</h3>", "Standard</h3><p>Prompts above 200K tokens incur a surcharge of 2x.</p>"),
+    (body: string) => body.replace("Standard</h3>", "Standard</h3><aside>Standard is invite-only.</aside>"),
+    (body: string) => body.replace("Every token the model processes is counted and billed", "Every token above 200K costs twice the normal rate"),
+  ]) {
+    assert.throws(() => parse("gemini", documents.map((document, i) => i === 2 ? { ...document, body: change(document.body) } : document)), /qualifier|restriction/);
+  }
+});
+
 test("price dates and guidance use current facts and exclude stale recommendations", () => {
   const now = new Date();
   const models = frontierProviders.map((p) => presentFrontier({ id: p, facts: parse(p), verifiedAt: now.toISOString() }, {provider:p, revisionId:p, error:null, paused:false, attemptedAt:now.toISOString()}, now));

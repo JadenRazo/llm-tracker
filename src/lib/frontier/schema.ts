@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 export const FRONTIER_SCHEMA_VERSION = 1;
-export const FRONTIER_PARSER_VERSION = "2026-10-14.1";
+export const FRONTIER_PARSER_VERSION = "2026-11-01.1";
 export const FRONTIER_MAX_AGE_MS = 6 * 60 * 60 * 1000;
 export const frontierProviders = ["claude", "openai", "gemini"] as const;
 const count = z.number().int().positive().max(100_000_000);

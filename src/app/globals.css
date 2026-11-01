@@ -13,7 +13,8 @@
 .frontier-secondary, .frontier-back { display: inline-flex; align-items: center; min-height: 44px; font-size: 14px; color: var(--color-text-secondary); }
 .frontier-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; }
 .frontier-quick-links { display: none; }
-.frontier-card { display: flex; flex-direction: column; min-width: 0; padding: 24px; background: var(--color-surface); border: 1px solid var(--color-border); border-top: 3px solid var(--provider-accent); border-radius: 8px; }
+.frontier-card { position: relative; display: flex; flex-direction: column; min-width: 0; padding: 24px; background: var(--color-surface); border: 1px solid var(--color-border); border-top: 3px solid transparent; border-radius: 8px; }
+.frontier-card::before { content: ""; position: absolute; top: -3px; left: -1px; right: -1px; height: 3px; border-radius: 8px 8px 0 0; background: var(--provider-mark); }
 .frontier-lab { display: flex; align-items: center; gap: 8px; color: var(--color-text-muted); font: 500 12px/1.5 var(--font-sans); }
 .frontier-card h3 { margin: 20px 0 10px; font: 600 clamp(21px, 2.2vw, 26px)/1.3 var(--font-sans); letter-spacing: -.035em; }
 .frontier-card h3 a { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
@@ -79,7 +80,7 @@
 .comparison-picker label { display: flex; align-items: center; gap: 12px; padding: 18px; min-width: 0; border: 1px solid var(--color-border); border-radius: 6px; background: var(--color-surface); cursor: pointer; }
 .comparison-picker label:has(:checked) { border-color: var(--provider-accent); }
 .comparison-picker strong { display: block; font-size: 15px; margin-top: 4px; }
-.comparison-picker input, .comparison-toolbar input { width: 18px; height: 18px; accent-color: var(--color-leaf); flex-shrink: 0; }
+.comparison-picker input, .comparison-toolbar input { width: 18px; height: 18px; accent-color: var(--provider-accent, var(--color-leaf)); flex-shrink: 0; }
 .comparison-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 20px; padding: 18px 0; font-size: 14px; }
 .comparison-toolbar p { color: var(--color-text-muted); }
 .comparison-toolbar label { display: flex; align-items: center; gap: 10px; min-height: 44px; cursor: pointer; }
@@ -93,7 +94,7 @@
 .comparison-table tbody th { color: var(--color-text-muted); }
 .comparison-table td { color: var(--color-text-secondary); }
 .comparison-table tbody tr:nth-child(even) { background: var(--color-surface); }
-.comparison-table a { display: inline-flex; align-items: center; gap: 7px; color: var(--color-leaf); }
+.comparison-table a { display: inline-flex; align-items: center; gap: 7px; color: var(--provider-accent, var(--color-leaf)); }
 .comparison-table a svg { flex-shrink: 0; }
 .comparison-table .comparison-sources a { display: flex; min-height: 44px; font-size: 13px; }
 .comparison-mobile { display: none; }
@@ -108,20 +109,20 @@
   .comparison-model-option { display: flex; align-items: center; border: 1px solid var(--color-border); border-radius: 6px; background: var(--color-surface); }
   .comparison-model-option:has(:checked) { border-color: var(--provider-accent); }
   .comparison-model-option label { flex: 1; border: 0; background: transparent; }
-  .comparison-profile-link { display: inline-flex; align-items: center; gap: 5px; flex-shrink: 0; min-height: 44px; padding-right: 14px; color: var(--color-leaf); font-size: 13px; }
+  .comparison-profile-link { display: inline-flex; align-items: center; gap: 5px; flex-shrink: 0; min-height: 44px; padding-right: 14px; color: var(--provider-accent); font-size: 13px; }
   .comparison-mobile { display: grid; gap: 24px; }
   .comparison-mobile section { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 8px; padding: 20px; }
   .comparison-mobile h2 { font: 600 18px/1.4 var(--font-sans); padding-bottom: 16px; }
   .comparison-mobile dl > div { padding: 14px 0; border-top: 1px solid var(--color-border); }
-  .comparison-mobile dt { color: var(--color-leaf); font-size: 13px; margin-bottom: 6px; }
+  .comparison-mobile dt { color: var(--provider-accent); font-size: 13px; margin-bottom: 6px; }
   .comparison-mobile dd { font-size: 15px; line-height: 1.8; color: var(--color-text-secondary); }
   .comparison-mobile-source { border-top: 1px solid var(--color-border); padding-top: 12px; margin-top: 12px; }
-  .comparison-mobile-source a { display: flex; align-items: center; min-height: 44px; color: var(--color-leaf); font-size: 14px; }
+  .comparison-mobile-source a { display: flex; align-items: center; min-height: 44px; color: var(--provider-accent); font-size: 14px; }
 }
 @media (max-width: 767px) {
   .frontier-cards, .task-guide, .profile-grid, .profile-pricing, .profile-compare > div { grid-template-columns: minmax(0, 1fr); }
   .frontier-quick-links { display: grid; margin-bottom: 24px; border-block: 1px solid var(--color-border); }
-  .frontier-quick-links a { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 48px; padding: 10px 0; color: var(--color-leaf); font-size: 15px; }
+  .frontier-quick-links a { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 48px; padding: 10px 0; color: var(--provider-accent); font-size: 15px; }
   .frontier-quick-links a + a { border-top: 1px solid var(--color-border); }
   .frontier-intro { padding-top: 12px; }
   .frontier-intro h1 { font-size: clamp(34px, 8vw, 46px); }
@@ -178,7 +179,7 @@
   cursor: pointer;
 }
 .subscription-choices label:has(input:checked) {
-  border-color: var(--color-leaf);
+  border-color: var(--provider-accent, var(--color-leaf));
   background: var(--color-surface-raised);
 }
 .subscription-choices label:focus-within {
@@ -189,7 +190,7 @@
   flex-shrink: 0;
   width: 16px;
   height: 16px;
-  accent-color: var(--color-leaf);
+  accent-color: var(--provider-accent, var(--color-leaf));
 }
 .subscription-url-label {
   display: block;
@@ -447,6 +448,27 @@
   --color-src-gh-go: var(--color-wheat);
   --color-src-gh-agent: var(--color-canopy);
 }
+
+/* Brand accents are independent of the tracker's green actions and status colors.
+   Text tones meet AA on background, surface and raised surface. Gradients are
+   decorative only; provider names and native selected states remain visible. */
+:root {
+  --color-provider-claude: #e99a7c;
+  --color-provider-openai: #f5f5f5;
+  --color-provider-gemini: #8ab4f8;
+  --provider-mark-claude: linear-gradient(110deg, #d97757, #c15f3c);
+  --provider-mark-openai: #f5f5f5;
+  --provider-mark-gemini: linear-gradient(110deg, #4285f4 0%, #34a853 32%, #fbbc05 65%, #ea4335 100%);
+}
+.provider-label { display: inline-flex; align-items: center; gap: 8px; }
+.provider-scope { --color-primary: var(--provider-accent); }
+.provider-scope .intro-kicker,
+.provider-scope .frontier-lab,
+.provider-scope .profile-sources a,
+.provider-scope .provider-jump-links a { color: var(--provider-accent); }
+.provider-scope .frontier-button { background: var(--provider-accent); }
+.provider-scope .frontier-button:hover { background: color-mix(in srgb, var(--provider-accent) 85%, white); }
+.provider-scope .profile-compare a:hover { border-color: var(--provider-accent); }
 
 /* ─────────────────────────────────────────────────────────────
    Source tint classes — consumers read --tint for left accent,
@@ -889,15 +911,18 @@ pre code {
 .provider-switcher a:hover,
 .provider-switcher a[aria-current] {
   background: var(--color-surface-raised);
-  color: var(--color-text-primary);
+  color: var(--provider-accent);
+}
+.provider-switcher a[aria-current] {
+  box-shadow: inset 0 -2px var(--provider-accent);
 }
 .provider-dot {
   display: inline-block;
-  width: 7px;
-  height: 7px;
+  width: 9px;
+  height: 9px;
   flex-shrink: 0;
   border-radius: 50%;
-  background: var(--provider-accent, var(--color-leaf));
+  background: var(--provider-mark, var(--provider-accent, var(--color-leaf)));
 }
 .section-nav {
   display: flex;
@@ -914,8 +939,8 @@ pre code {
   border-bottom: 2px solid transparent;
 }
 .section-nav a[aria-current="page"] {
-  border-color: var(--color-leaf);
-  color: var(--color-text-primary);
+  border-color: var(--provider-accent, var(--color-leaf));
+  color: var(--provider-accent, var(--color-text-primary));
 }
 .section-nav a:hover,
 .quiet-link:hover {
@@ -981,7 +1006,7 @@ button.icon-button {
 }
 .mobile-sections a[aria-current="page"] {
   background: var(--color-surface-raised);
-  color: var(--color-leaf);
+  color: var(--provider-accent, var(--color-leaf));
 }
 .overview-intro {
   display: flex;
@@ -1051,16 +1076,21 @@ button.icon-button {
   border-bottom: 1px solid var(--color-border);
 }
 .feed-provider-tabs button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  flex: 0 1 auto;
   min-height: 44px;
-  padding: 0 12px 10px;
+  padding: 0 10px 10px;
   border-bottom: 2px solid transparent;
   color: var(--color-text-muted);
   font-size: 13px;
   cursor: pointer;
 }
 .feed-provider-tabs button[aria-pressed="true"] {
-  color: var(--color-leaf);
-  border-color: var(--color-leaf);
+  color: var(--provider-accent, var(--color-leaf));
+  border-color: var(--provider-accent, var(--color-leaf));
 }
 .feed-provider-tabs button:hover {
   color: var(--color-text-primary);
@@ -1141,7 +1171,7 @@ button.icon-button {
   cursor: pointer;
 }
 input[type="checkbox"] {
-  accent-color: var(--color-leaf);
+  accent-color: var(--provider-accent, var(--color-leaf));
   width: 16px;
   height: 16px;
 }
@@ -1183,7 +1213,7 @@ input[type="checkbox"] {
   display: inline;
 }
 .activity-item h3 a:hover {
-  color: var(--color-leaf);
+  color: var(--provider-accent);
 }
 .activity-item h3 svg {
   display: inline;

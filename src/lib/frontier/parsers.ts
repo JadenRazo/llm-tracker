@@ -184,11 +184,17 @@ export function parseFrontier(provider: FrontierProvider, candidate: Candidate, 
     const priceScope = heading.closest(".models-section").nextUntil(".models-section");
     const standard = priceScope.find("section").filter((_, s) => clean(price$(s).find("h3").first().text()) === "Standard");
     need(standard.length === 1, "Gemini standard pricing section missing or ambiguous");
+    const searchBillingNote = "* A customer-submitted request to Gemini may result in one or more queries to Google Search. You will be charged for each individual search query performed.";
     const surrounding = standard.clone(); surrounding.find("table,h3").remove();
+    // Google now repeats this tool-billing footnote inside each service tier.
+    // Accept only its exact reviewed wording; unknown token qualifiers still fail.
+    const searchNote = surrounding.find("p").filter((_, p) => clean(price$(p).text()) === searchBillingNote);
+    const hasSearchBillingNote = searchNote.length > 0;
+    searchNote.remove();
     need(!clean(surrounding.text()), "Gemini: unrecognized standard pricing qualifier");
     priceScope.filter("p").add(priceScope.find("p").not("section p")).each((_, element) => {
       const prose = clean(price$(element).text());
-      if (!prose.startsWith("* A customer-submitted request to Gemini")) rejectUnknownPriceConditions(prose, "Gemini");
+      if (prose !== searchBillingNote) rejectUnknownPriceConditions(prose, "Gemini");
     });
     const table = standard.find("table");
     need(table.length === 1 && !table.find("tfoot,caption").length, "Gemini: unrecognized standard pricing footnote or table");
@@ -205,9 +211,18 @@ export function parseFrontier(provider: FrontierProvider, candidate: Candidate, 
     const input = rate(/^Input price$/), output = rate(/^Output price(?: \(including thinking tokens\))?$/);
     need(input.change?.date === output.change?.date, "Gemini input/output schedules differ");
     const thinking = data.get("Thinking")?.match(/^Supported \(([^)]+)\)$/)?.[1];
-    const restriction = clean(priceScope.filter("aside").add(priceScope.find("aside")).text());
-    need(!restriction || restriction === `Note: ${candidate.name} is not available on the Free tier or on the Google AI Pro plan.`, "Unrecognized Gemini access/price restriction");
-    facts = { inputs: modalities(value("Inputs")), outputs: modalities(value("Output")), context: { tokens: tokenCount, kind: shared ? "shared" : "input" }, output: extended ? { tokens: count(extended[1]), extended: count(extended[2]) } : { tokens: count(max) }, reasoning: { levels: thinking ? thinking.split(",").map((v) => v.trim()) : null, mode: null, default: null }, pricing: { input: input.initial, output: output.initial, changes: input.change && output.change ? [{ effectiveAt: input.change.date, input: input.change.value, output: output.change.value }] : [], note: "Standard paid API rates; output includes thinking tokens. Caching, batch, service tiers and grounding have separate rates." }, access: restriction ? "Paid Gemini API; unavailable on the free tier or Google AI Pro" : "Paid Gemini API; check the source for free-tier availability" };
+    // Contributor/Batch/etc. access notes do not describe Standard API access.
+    // Standard's own asides remain subject to the qualifier guard above.
+    const restriction = clean(priceScope.filter("aside").add(priceScope.find("aside").not("section aside")).text());
+    const excludesPro = restriction === `Note: ${candidate.name} is not available on the Free tier or on the Google AI Pro plan.`;
+    const billsAllTokens = restriction === `Note: ${candidate.name} is not available on the Free tier. Every token the model processes is counted and billed, including thinking tokens and internal tool system instructions and function declarations when using grounding.`;
+    need(!restriction || excludesPro || billsAllTokens, "Unrecognized Gemini access/price restriction");
+    const billingNotes = [
+      "Standard paid API rates; output includes thinking tokens. Caching, batch, service tiers and grounding have separate rates.",
+      billsAllTokens ? "Every processed token is billed, including internal tool system instructions and function declarations when grounding." : "",
+      hasSearchBillingNote ? "Google Search grounding is billed per individual search query." : "",
+    ].filter(Boolean).join(" ");
+    facts = { inputs: modalities(value("Inputs")), outputs: modalities(value("Output")), context: { tokens: tokenCount, kind: shared ? "shared" : "input" }, output: extended ? { tokens: count(extended[1]), extended: count(extended[2]) } : { tokens: count(max) }, reasoning: { levels: thinking ? thinking.split(",").map((v) => v.trim()) : null, mode: null, default: null }, pricing: { input: input.initial, output: output.initial, changes: input.change && output.change ? [{ effectiveAt: input.change.date, input: input.change.value, output: output.change.value }] : [], note: billingNotes }, access: excludesPro ? "Paid Gemini API; unavailable on the free tier or Google AI Pro" : billsAllTokens ? "Paid Gemini API; unavailable on the free tier" : "Paid Gemini API; check the source for free-tier availability" };
   }
   return frontierFactsSchema.parse({
     ...facts, schemaVersion: FRONTIER_SCHEMA_VERSION, parserVersion: FRONTIER_PARSER_VERSION,

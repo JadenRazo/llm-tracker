@@ -14,7 +14,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { DataUnavailable } from "@/components/ui/data-unavailable";
 import type { LoadResult } from "@/lib/load-result";
 import { PROVIDERS } from "@/lib/providers";
-import { getProviderMeta } from "@/lib/provider-meta";
+import { getProviderMeta, getProviderStyle } from "@/lib/provider-meta";
 import { FrontierModelCards } from "@/components/frontier/model-cards";
 import { FrontierSourceNote } from "@/components/frontier/source-note";
 import { TaskGuide } from "@/components/frontier/task-guide";
@@ -154,7 +154,7 @@ async function LatestUpdates() {
                 <div
                   key={provider}
                   className="provider-resource"
-                  style={{ ["--provider-accent" as string]: meta.accentVar }}
+                  style={getProviderStyle(provider)}
                 >
                   <div className="provider-resource-title">
                     <Link href={`/${provider}`}>
