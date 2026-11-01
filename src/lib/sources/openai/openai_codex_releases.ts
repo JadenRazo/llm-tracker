@@ -9,7 +9,7 @@ import { z } from "zod";
 import { tryGetDb } from "@/lib/db";
 import { events } from "@/lib/db/schema";
 import { env } from "@/lib/env";
-import { fetchConditional } from "@/lib/poller/conditional-fetch";
+import { fetchConditional, loadPersistedCacheHeaders } from "@/lib/poller/conditional-fetch";
 import type { RunResult } from "@/lib/poller/runner";
 import type { Provider } from "@/lib/providers";
 import type { SourceDescriptor } from "@/lib/sources/registry";
@@ -36,6 +36,10 @@ const githubReleaseSchema = z
 const githubReleasesSchema = z.array(githubReleaseSchema);
 
 type GithubRelease = z.infer<typeof githubReleaseSchema>;
+const pageCacheSchema = z.array(z.object({
+  etag: z.string().optional(), lastModified: z.string().optional(), count: z.number().int().min(0).max(5),
+})).max(4);
+const PAGE_CACHE_PREFIX = '"release-pages-v1:';
 
 export async function runOpenaiCodexReleases(): Promise<RunResult> {
   const token = env().GITHUB_TOKEN;
@@ -50,28 +54,48 @@ export async function runOpenaiCodexReleases(): Promise<RunResult> {
   // No page retry: four 5s request deadlines bound HTTP time to 20s. Fetch and
   // validate every needed page before the single idempotent database write.
   const releases: GithubRelease[] = [];
-  let etag: string | undefined;
-  let lastModified: string | undefined;
+  // Store the page validators together in the existing successful-run ETag
+  // field. A legacy single-response ETag triggers a complete bounded refresh.
+  // Each page must be checked: an older draft may become public while page 1
+  // remains unchanged. Never send this opaque manifest as an HTTP header.
+  const persisted = await loadPersistedCacheHeaders(SOURCE_KEY);
+  let priorPages: z.infer<typeof pageCacheSchema> = [];
+  if (persisted.etag?.startsWith(PAGE_CACHE_PREFIX) && persisted.etag.endsWith('"') && persisted.etag.length <= 8192) {
+    try {
+      const manifest = Buffer.from(persisted.etag.slice(PAGE_CACHE_PREFIX.length, -1), "base64url").toString("utf8");
+      const parsed = pageCacheSchema.safeParse(JSON.parse(manifest));
+      if (parsed.success) priorPages = parsed.data;
+    } catch { /* Invalid cache metadata is safely refetched. */ }
+  }
+  const nextPages: z.infer<typeof pageCacheSchema> = [];
+  let changed = false;
   for (let page = 1; page <= 4; page++) {
     const url = `https://api.github.com/repos/${REPO}/releases?per_page=5&page=${page}`;
+    const prior = priorPages[page - 1];
     const res = await fetchConditional(url, page === 1 ? SOURCE_KEY : `${SOURCE_KEY}:page-${page}`, {
-      headers, persistedCacheOnly: true, maxRetries: 0, timeoutMs: 5_000,
+      headers, cacheHeaders: prior ?? {}, maxRetries: 0, timeoutMs: 5_000,
     });
-    if (page === 1) {
-      etag = res.etag;
-      lastModified = res.lastModified;
-      if (res.unchanged) return { inserted: 0, updated: 0, skipped: 0, status: "unchanged", etag, lastModified };
+    if (res.unchanged) {
+      if (!prior) throw new Error(`${REPO} releases page ${page} returned 304 without committed cache metadata`);
+      nextPages.push({ etag: res.etag, lastModified: res.lastModified, count: prior.count });
+      if (prior.count < 5) break;
+      continue;
     }
+    changed = true;
     if (res.oversized) throw new Error(`${REPO} releases page ${page} exceeded the response body cap`);
-    if (res.unchanged || !res.body || res.status !== 200) throw new Error(`${REPO} releases page ${page} returned unusable status ${res.status}`);
+    if (!res.body || res.status !== 200) throw new Error(`${REPO} releases page ${page} returned unusable status ${res.status}`);
     let raw: unknown;
     try { raw = JSON.parse(res.body); }
     catch { throw new Error(`${REPO} releases page ${page} returned non-JSON body`); }
     const parsed = githubReleasesSchema.safeParse(raw);
     if (!parsed.success || parsed.data.length > 5) throw new Error(`${REPO} releases page ${page} failed schema validation`);
+    nextPages.push({ etag: res.etag, lastModified: res.lastModified, count: parsed.data.length });
     releases.push(...parsed.data);
     if (parsed.data.length < 5) break;
   }
+  // A quoted opaque tag is syntactically safe even for the old adapter on
+  // rollback; it cannot match GitHub's old twenty-release response validator.
+  const etag = PAGE_CACHE_PREFIX + Buffer.from(JSON.stringify(nextPages)).toString("base64url") + '"';
 
   const db = tryGetDb();
   if (!db) return { inserted: 0, updated: 0, skipped: 1, status: "skipped" };
@@ -79,7 +103,7 @@ export async function runOpenaiCodexReleases(): Promise<RunResult> {
   const publishable = releases.filter((r) => !r.draft);
   const draftSkipped = releases.length - publishable.length;
   if (publishable.length === 0) {
-    return { inserted: 0, updated: 0, skipped: draftSkipped, status: "ok", etag, lastModified };
+    return { inserted: 0, updated: 0, skipped: draftSkipped, status: changed ? "ok" : "unchanged", etag };
   }
 
   const rows = publishable.map((rel) => {
@@ -114,7 +138,6 @@ export async function runOpenaiCodexReleases(): Promise<RunResult> {
     skipped: draftSkipped + (publishable.length - inserted.length),
     status: "ok",
     etag,
-    lastModified,
   };
 }
 

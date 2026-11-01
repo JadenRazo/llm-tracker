@@ -6,6 +6,7 @@ type Mode = "normal" | "http" | "oversized" | "malformed" | "schema" | "network"
 let mode: Mode = "normal";
 let failurePage = 2;
 let count = 20;
+let changedPage = 0;
 let calls: number[] = [];
 const release = (i: number) => ({ id: i, tag_name: `v${i}`, name: `Release ${i}`, body: null,
   html_url: `https://github.com/openai/codex/releases/tag/v${i}`, draft: i === 3, prerelease: i === 4,
@@ -29,17 +30,17 @@ globalThis.fetch = async (input, init) => {
     if (mode === "malformed") return new Response("not json");
     if (mode === "schema") return Response.json([{ id: 1 }]);
   }
-  const etag = `"page-${page}"`;
+  const etag = `"page-${page}${page === changedPage ? '-changed' : ''}"`;
   if (new Headers(init?.headers).get("if-none-match") === etag) return new Response(null, { status: 304, headers: { etag } });
-  const rows = Array.from({ length: Math.max(0, Math.min(size, count - (page - 1) * size)) }, (_, n) => release((page - 1) * size + n));
+  const rows = Array.from({ length: Math.max(0, Math.min(size, count - (page - 1) * size)) }, (_, n) => release((page - 1) * size + n + (page === changedPage ? 100 : 0)));
   return Response.json(rows, { headers: { etag } });
 };
-function reset() { resetDatabase(); mode = "normal"; failurePage = 2; count = 20; calls = []; }
+function reset() { resetDatabase(); mode = "normal"; failurePage = 2; count = 20; calls = []; changedPage = 0; }
 async function main() {
   reset();
   const first = await runOpenaiCodexReleases();
   assert.deepEqual(calls, [1, 2, 3, 4]);
-  assert.equal(first.inserted, 19); assert.equal(first.skipped, 1); assert.equal(first.etag, '"page-1"');
+  assert.equal(first.inserted, 19); assert.equal(first.skipped, 1); assert.ok(first.etag?.startsWith('"release-pages-v1:'));
   assert.equal(state.writes.length, 1);
   assert.ok(state.writes[0].every(r => r.bodyMd === null && r.provider === "openai"));
   assert.equal(state.writes[0].find(r => r.externalId === "openai/codex:v4")?.type, "prerelease");
@@ -57,12 +58,20 @@ async function main() {
   reset(); state.writeFailure = true;
   await assert.rejects(runOpenaiCodexReleases(), /fixture write failure/);
   state.writeFailure = false; calls = [];
-  assert.equal((await runOpenaiCodexReleases()).inserted, 19);
+  const recoveredWrite = await runOpenaiCodexReleases();
+  assert.equal(recoveredWrite.inserted, 19);
   assert.deepEqual(calls, [1, 2, 3, 4]);
   // Only the runner's successfully recorded parent result can enable 304.
-  state.persistedEtag = '"page-1"'; calls = [];
+  state.persistedEtag = recoveredWrite.etag; calls = [];
   assert.equal((await runOpenaiCodexReleases()).status, "unchanged");
-  assert.deepEqual(calls, [1]);
+  assert.deepEqual(calls, [1, 2, 3, 4]);
+  // A later page can change even if page 1 remains unchanged.
+  changedPage = 2; calls = [];
+  assert.equal((await runOpenaiCodexReleases()).inserted, 5);
+  assert.deepEqual(calls, [1, 2, 3, 4]);
+  reset(); state.persistedEtag = '"old-twenty-release-etag"';
+  assert.equal((await runOpenaiCodexReleases()).inserted, 19);
+  assert.deepEqual(calls, [1, 2, 3, 4]);
 
   reset(); count = 0;
   assert.equal((await runOpenaiCodexReleases()).status, "ok");

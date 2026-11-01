@@ -41,10 +41,14 @@ export interface ConditionalFetchOptions {
    * upstream that has actually gone wrong.
    */
   maxBodyBytes?: number;
-  /** Use only headers from a successfully recorded run, never an uncommitted
-   * in-memory fetch. Multi-page sources must not skip earlier pages after a
-   * later fetch or database write fails. Existing sources keep their behavior. */
-  persistedCacheOnly?: boolean;
+  /** Caller-owned committed validators for a particular page. Providing this
+   * bypasses both automatic DB lookup and the uncommitted in-memory cache. */
+  cacheHeaders?: { etag?: string; lastModified?: string };
+}
+
+/** Read only a successfully recorded run's validators, without memory reuse. */
+export function loadPersistedCacheHeaders(sourceKey: string) {
+  return loadCacheHeaders(sourceKey, false);
 }
 
 const headerCache = new Map<string, { etag?: string; lastModified?: string }>();
@@ -137,8 +141,8 @@ export async function fetchConditional(
   sourceKey: string,
   options: ConditionalFetchOptions = {},
 ): Promise<ConditionalFetchResult> {
-  const useMemoryCache = !options.persistedCacheOnly;
-  const { etag, lastModified } = await loadCacheHeaders(sourceKey, useMemoryCache);
+  const useMemoryCache = options.cacheHeaders === undefined;
+  const { etag, lastModified } = options.cacheHeaders ?? await loadCacheHeaders(sourceKey);
   const maxRetries = options.maxRetries ?? 2;
   const timeoutMs = options.timeoutMs ?? 30_000;
   const maxBodyBytes = options.maxBodyBytes ?? DEFAULT_MAX_BODY_BYTES;
