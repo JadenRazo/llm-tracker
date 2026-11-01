@@ -3,8 +3,8 @@
 import { useMemo, useState } from "react";
 import { ArrowUpRight, Search, X } from "lucide-react";
 import { filterActivity, type ActivityItem } from "@/lib/activity";
-import { PROVIDERS } from "@/lib/providers";
-import { getProviderMeta } from "@/lib/provider-meta";
+import { PROVIDERS, isProvider } from "@/lib/providers";
+import { getProviderMeta, getProviderStyle } from "@/lib/provider-meta";
 
 const CATEGORIES = {
   changes: "Product updates",
@@ -50,8 +50,10 @@ export function ActivityFeed({ items }: { items: ActivityItem[] }) {
             key={p}
             type="button"
             aria-pressed={p === provider}
+            style={isProvider(p) ? getProviderStyle(p) : undefined}
             onClick={() => setProvider(p)}
           >
+            {isProvider(p) && <span className="provider-dot" aria-hidden />}
             {p === "all"
               ? "All providers"
               : getProviderMeta(p as (typeof PROVIDERS)[number]).label}
@@ -114,7 +116,7 @@ export function ActivityFeed({ items }: { items: ActivityItem[] }) {
               <li
                 key={item.id}
                 className="activity-item"
-                style={{ ["--provider-accent" as string]: meta.accentVar }}
+                style={getProviderStyle(item.provider)}
               >
                 <article>
                   <div className="activity-meta">

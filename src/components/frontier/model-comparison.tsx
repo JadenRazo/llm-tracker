@@ -5,7 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { useState } from "react";
 import { ArrowUpRight } from "lucide-react";
 import { comparisonHref, comparisonRows, comparisonSelection, differingRows, type FrontierModel } from "@/lib/frontier-models";
-import { getProviderMeta } from "@/lib/provider-meta";
+import { getProviderStyle } from "@/lib/provider-meta";
 
 export function ModelComparison({ asOf, available, missingIds, unavailable }: { asOf: string; available: FrontierModel[]; missingIds: string[]; unavailable: boolean }) {
   const params = useSearchParams();
@@ -30,8 +30,8 @@ export function ModelComparison({ asOf, available, missingIds, unavailable }: { 
       <fieldset className="comparison-picker">
         <legend>Choose two or three models</legend>
         <div>{available.map((model) => (
-          <div key={model.id} className="comparison-model-option" style={{ ["--provider-accent" as string]: getProviderMeta(model.provider).accentVar }}>
-            <label><input type="checkbox" disabled={models.length >= 3 && !models.some((m) => m.id === model.id)} checked={models.some((m) => m.id === model.id)} onChange={() => toggle(model.id)} /><span><span className="frontier-lab">{model.lab}</span><strong>{model.name}</strong></span></label>
+          <div key={model.id} className="comparison-model-option" style={getProviderStyle(model.provider)}>
+            <label><input type="checkbox" disabled={models.length >= 3 && !models.some((m) => m.id === model.id)} checked={models.some((m) => m.id === model.id)} onChange={() => toggle(model.id)} /><span><span className="frontier-lab"><span className="provider-dot" aria-hidden />{model.lab}</span><strong>{model.name}</strong></span></label>
             <Link className="comparison-profile-link" href={`/models/${model.id}`} aria-label={`Read ${model.name} profile`}>Profile <ArrowUpRight size={14} aria-hidden /></Link>
           </div>
         ))}</div>
@@ -40,9 +40,9 @@ export function ModelComparison({ asOf, available, missingIds, unavailable }: { 
       {models.length < 2 ? <div className="comparison-empty"><h2>{models.length === 0 ? "Choose your first two models." : "Add one more model to compare."}</h2><p>Select models above to compare their strengths, limits, and pricing side by side.</p></div> : <>
         <p className="comparison-explainer">Standard API prices in USD per million tokens. Verification dates appear below; rates follow the published schedule. Conditions appear alongside the rates. Task guidance follows documented capabilities; it is not a performance ranking.</p>
         <div className="comparison-desktop">
-          <table className="comparison-table"><caption className="sr-only">Frontier model comparison{differences ? ", differences only" : ""}</caption><thead><tr><th scope="col">What matters</th>{models.map((model) => <th scope="col" key={model.id}><Link href={`/models/${model.id}`}>{model.name}<ArrowUpRight size={15} aria-hidden /></Link></th>)}</tr></thead><tbody>{shownRows.map((row) => <tr key={row.label}><th scope="row">{row.label}</th>{row.values.map((value, i) => <td key={models[i].id}>{value}</td>)}</tr>)}<tr><th scope="row">Official sources</th>{models.map((model) => <td key={model.id} className="comparison-sources">{model.sources.map((source) => <a key={source.url} href={source.url}>{source.label}<ArrowUpRight size={13} aria-hidden /></a>)}</td>)}</tr></tbody></table>
+          <table className="comparison-table"><caption className="sr-only">Frontier model comparison{differences ? ", differences only" : ""}</caption><thead><tr><th scope="col">What matters</th>{models.map((model) => <th scope="col" key={model.id} style={getProviderStyle(model.provider)}><Link href={`/models/${model.id}`}>{model.name}<ArrowUpRight size={15} aria-hidden /></Link></th>)}</tr></thead><tbody>{shownRows.map((row) => <tr key={row.label}><th scope="row">{row.label}</th>{row.values.map((value, i) => <td key={models[i].id}>{value}</td>)}</tr>)}<tr><th scope="row">Official sources</th>{models.map((model) => <td key={model.id} className="comparison-sources" style={getProviderStyle(model.provider)}>{model.sources.map((source) => <a key={source.url} href={source.url}>{source.label}<ArrowUpRight size={13} aria-hidden /></a>)}</td>)}</tr></tbody></table>
         </div>
-        <div className="comparison-mobile">{shownRows.map((row) => <section key={row.label}><h2>{row.label}</h2><dl>{models.map((model, i) => <div key={model.id}><dt>{model.name}</dt><dd>{row.values[i]}</dd></div>)}</dl></section>)}<section><h2>Official sources</h2>{models.map((model) => <div className="comparison-mobile-source" key={model.id}><Link href={`/models/${model.id}`}>{model.name} profile</Link>{model.sources.map((source) => <a href={source.url} key={source.url}>{source.label} ↗</a>)}</div>)}</section></div>
+        <div className="comparison-mobile">{shownRows.map((row) => <section key={row.label}><h2>{row.label}</h2><dl>{models.map((model, i) => <div key={model.id} style={getProviderStyle(model.provider)}><dt className="provider-label"><span className="provider-dot" aria-hidden />{model.name}</dt><dd>{row.values[i]}</dd></div>)}</dl></section>)}<section><h2>Official sources</h2>{models.map((model) => <div className="comparison-mobile-source" key={model.id} style={getProviderStyle(model.provider)}><Link href={`/models/${model.id}`}>{model.name} profile</Link>{model.sources.map((source) => <a href={source.url} key={source.url}>{source.label} ↗</a>)}</div>)}</section></div>
       </>}
     </>
   );

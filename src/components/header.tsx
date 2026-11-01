@@ -22,7 +22,7 @@ import {
   providerFromPathname,
   swapProviderInPath,
 } from "@/lib/provider-route";
-import { getProviderMeta } from "@/lib/provider-meta";
+import { getProviderMeta, getProviderStyle } from "@/lib/provider-meta";
 
 const LINKS = [
   { suffix: "", label: "Learn", icon: BookOpen },
@@ -102,9 +102,7 @@ export function Header({ contentAvailability }: HeaderProps = {}) {
             key={p}
             href={target}
             aria-current={provider === p ? "true" : undefined}
-            style={{
-              ["--provider-accent" as string]: getProviderMeta(p).accentVar,
-            }}
+            style={getProviderStyle(p)}
             onClick={() => setOpen(false)}
           >
             <span className="provider-dot" aria-hidden />
@@ -138,7 +136,7 @@ export function Header({ contentAvailability }: HeaderProps = {}) {
   );
 
   return (
-    <header className="site-header">
+    <header className="site-header" style={provider ? getProviderStyle(provider) : undefined}>
       <div className="header-inner">
         <Link href="/" className="site-brand" aria-label="LLM Tracker home">
           <Terminal size={22} strokeWidth={1.7} aria-hidden />
