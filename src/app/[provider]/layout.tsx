@@ -8,6 +8,7 @@
 import { notFound } from "next/navigation";
 import { PROVIDERS } from "@/lib/providers";
 import { parseProviderParam } from "@/lib/provider-route";
+import { getProviderStyle } from "@/lib/provider-meta";
 
 export function generateStaticParams() {
   return PROVIDERS.map((provider) => ({ provider }));
@@ -23,7 +24,7 @@ export default async function ProviderLayout({
   children: React.ReactNode;
   params: Promise<{ provider: string }>;
 }) {
-  const { provider } = await params;
-  if (!parseProviderParam(provider)) notFound();
-  return <>{children}</>;
+  const provider = parseProviderParam((await params).provider);
+  if (!provider) notFound();
+  return <div className="provider-scope" style={getProviderStyle(provider)}>{children}</div>;
 }

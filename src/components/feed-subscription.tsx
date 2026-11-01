@@ -2,6 +2,8 @@
 
 import { useEffect, useId, useRef, useState } from "react";
 import { Check, Copy } from "lucide-react";
+import { isProvider } from "@/lib/providers";
+import { getProviderStyle } from "@/lib/provider-meta";
 
 interface FeedOption {
   id: string;
@@ -52,7 +54,7 @@ export function FeedSubscription({ feeds }: { feeds: readonly FeedOption[] }) {
       <fieldset className="subscription-choices">
         <legend className="sr-only">Updates to follow</legend>
         {feeds.map((option) => (
-          <label key={option.id}>
+          <label key={option.id} style={isProvider(option.id) ? getProviderStyle(option.id) : undefined}>
             <input
               type="radio"
               name={`${id}-provider`}
@@ -60,7 +62,7 @@ export function FeedSubscription({ feeds }: { feeds: readonly FeedOption[] }) {
               checked={selected === option.id}
               onChange={() => chooseFeed(option.id)}
             />
-            <span>{option.label}</span>
+            <span className="provider-label">{isProvider(option.id) && <span className="provider-dot" aria-hidden />}{option.label}</span>
           </label>
         ))}
       </fieldset>

@@ -5,7 +5,7 @@ import { ArrowRight, ArrowUpRight } from "lucide-react";
 import { comparisonHref, modelPrice } from "@/lib/frontier-models";
 import { getFrontierData } from "@/lib/frontier/read";
 import { verificationLabel } from "@/lib/frontier/presentation";
-import { getProviderMeta } from "@/lib/provider-meta";
+import { getProviderMeta, getProviderStyle } from "@/lib/provider-meta";
 import { FrontierSourceNote } from "@/components/frontier/source-note";
 
 export const dynamic = "force-dynamic";
@@ -27,7 +27,7 @@ export default async function ModelProfile({ params }: Props) {
   }
   const asOf = new Date().toISOString().slice(0, 10);
   const price = modelPrice(model, asOf);
-  return <article className="frontier-page" style={{ ["--provider-accent" as string]: getProviderMeta(model.provider).accentVar }}>
+  return <article className="frontier-page provider-scope" style={getProviderStyle(model.provider)}>
     <Link href="/" className="frontier-back">← All frontier models</Link>
     <header className="frontier-intro"><p className="frontier-lab"><span className="provider-dot" aria-hidden />{model.lab} · Frontier profile</p><h1>{model.name}</h1><p>{model.summary}</p><Link href="/compare" className="frontier-button">Compare all three <ArrowRight size={18} aria-hidden /></Link></header>
     <div className="profile-grid"><section><p className="intro-kicker">Consider it for</p><h2>{model.focus}</h2><p>{model.why}</p><h3>The tradeoff</h3><p>{model.tradeoff}</p><p className="profile-editorial">Task guidance follows the documented capabilities. It is not an independent benchmark result.</p></section><section className="profile-specs"><h2>At a glance</h2><dl>{[["Inputs", model.inputs], ["Context budget", model.context], ["Maximum output", model.output], ["Reasoning", model.reasoning], ["API access", model.access]].map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl></section></div>

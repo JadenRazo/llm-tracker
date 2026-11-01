@@ -95,7 +95,6 @@ export default async function ProviderHomePage({ params }: PageProps) {
   return (
     <div
       className="provider-page"
-      style={{ ["--provider-accent" as string]: meta.accentVar }}
     >
       <header className="provider-intro">
         <div>
