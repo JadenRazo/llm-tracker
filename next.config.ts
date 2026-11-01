@@ -1,8 +1,24 @@
 import type { NextConfig } from "next";
 import path from "path";
+import fs from "node:fs";
+import matter from "gray-matter";
+
+// Compile the public article route set from the same checked-in content used by
+// static generation. Middleware can reject missing slugs without importing fs/DB
+// into the Edge bundle or asking Next to render a nonexistent SSG fallback.
+const staticArticleRoutes = ["guides", "tips"].flatMap((section) =>
+  fs.readdirSync(path.join(__dirname, "content", section))
+    .filter((file) => file.endsWith(".md") && file.toLowerCase() !== "readme.md")
+    .flatMap((file) => {
+      const { data } = matter(fs.readFileSync(path.join(__dirname, "content", section, file), "utf8"));
+      const provider = ["claude", "openai", "gemini"].includes(data.provider) ? data.provider : "claude";
+      return [`/${provider}/${section}/${file.replace(/\.md$/, "")}`];
+    }),
+).sort();
 
 const nextConfig: NextConfig = {
   output: "standalone",
+  env: { STATIC_ARTICLE_ROUTES: JSON.stringify(staticArticleRoutes) },
   // ISR entries live in memory, not on disk: the Lambda image filesystem is
   // read-only, so the default FileSystemCache failed every revalidation with
   // EROFS and pages were frozen at the build-time (empty-DB) prerender.

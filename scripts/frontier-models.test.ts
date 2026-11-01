@@ -42,3 +42,16 @@ test("new routes pass middleware while unknown profiles and nested comparison pa
   for (const path of ["/", "/compare", "/models", ...FRONTIER_MODELS.map((m) => `/models/${m.id}`)]) assert.equal(isUnknownPath(path), false, path);
   for (const path of ["/models/unknown", "/models/gpt-6-astra/nope", "/compare/nope"]) assert.equal(isUnknownPath(path), true, path);
 });
+
+
+test("not-found guard preserves real metadata and feed routes, including dots", () => {
+  for (const path of ["/icon.svg", "/opengraph-image", "/rss.xml", "/claude/rss.xml", "/openai/rss.xml", "/gemini/rss.xml", "/not-found-page"]) assert.equal(isUnknownPath(path), false, path);
+  for (const path of ["/missing.fixture", "/unknown-operational-fixture", "/claude/nonexistent"]) assert.equal(isUnknownPath(path), true, path);
+});
+
+
+test("unknown article slugs and extra segments avoid nonexistent SSG fallback", () => {
+  const routes = new Set(["/claude/guides/fixture", "/openai/tips/fixture"]);
+  for (const path of routes) assert.equal(isUnknownPath(path, routes), false);
+  for (const path of ["/claude/guides/missing", "/gemini/guides/fixture", "/claude/models/extra", "/claude/tips/fixture/extra"]) assert.equal(isUnknownPath(path, routes), true, path);
+});

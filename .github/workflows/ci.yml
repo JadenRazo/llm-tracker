@@ -77,6 +77,9 @@ jobs:
       - name: Assert no DB-backed route is prerendered
         run: npm run check:prerender
 
+      - name: Verify built 404 status, caching and valid articles
+        run: npm run check:404
+
       # The poller bundle must build and load, or the ingest half of the deploy
       # fails after the web half has already shipped.
       - name: Build poller bundle
