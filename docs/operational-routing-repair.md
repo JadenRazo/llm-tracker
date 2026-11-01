@@ -19,19 +19,22 @@ metadata, and rejects `NoFallbackError`. The package guard also requires the
 built not-found document in the standalone output. Typecheck, UI/read regressions
 and lint passed locally on Node 22; lint retains existing unrelated warnings.
 
-**Release remains blocked as of November 1, 2026, 22:46 UTC.** The existing
+**The initial release gate failed on November 1, 2026, at 22:46 UTC.** The existing
 `assert-frontier-status.mjs` gate rejected the live state: Gemini's accepted
 revision was last verified October 14 and is failed. Its current source rejects
 an unrecognized pricing qualifier. The Codex-release source also reports errors.
-Do not bypass the gate, fabricate accepted data, or trigger the whole deploy
-workflow merely to ship this web-only repair. Restore source-backed readiness
-through the owning ingestion process, then use the established release checks.
+The separately accepted provider-color release subsequently repaired Gemini's
+parser and passed the existing workflow. At 23:02 UTC all three frontier profiles
+were current and the gate passed. This candidate integrates that newer mainline
+before release; the remaining Codex source failure is still reported separately.
+No gate was bypassed and no accepted data was fabricated.
 
-The candidate has not been pushed or deployed. Before a later release, refresh
+Before release, refresh
 the source revision, readiness gate, function revision and image digest, preserve
 the prior image, publish assets before switching code, and retain old bundles.
-The application workflow owns executable delivery; no infrastructure apply is
-needed. Roll back a harmful web release to the captured prior immutable image
+The protected CI/deploy workflow owns executable delivery and serializes releases;
+its existing idempotent source checks and accepted-frontier gate remain intact.
+No infrastructure apply is needed. Roll back a harmful web release to the captured prior immutable image
 using a fresh function revision guard and the existing Lambda rollback runbook.
 That rollback would restore the known missing-route defect; it is not a claim
 that the prior release is healthy. Comparable-traffic throttle verification is
