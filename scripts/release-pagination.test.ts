@@ -7,6 +7,17 @@ let mode: Mode = "normal";
 let failurePage = 2;
 let count = 20;
 let changedPage = 0;
+let clock = 0;
+let pageTimes: number[] = [];
+let requestBudget = 0;
+const requestBudgets: number[] = [];
+const originalSetTimeout = globalThis.setTimeout;
+const originalNow = Object.getOwnPropertyDescriptor(performance, "now");
+Object.defineProperty(performance, "now", { configurable: true, value: () => clock });
+globalThis.setTimeout = ((handler: Parameters<typeof setTimeout>[0], delay?: number, ...args: unknown[]) => {
+  requestBudget = delay ?? 0;
+  return originalSetTimeout(handler, delay, ...args);
+}) as typeof setTimeout;
 let calls: number[] = [];
 const release = (i: number) => ({ id: i, tag_name: `v${i}`, name: `Release ${i}`, body: null,
   html_url: `https://github.com/openai/codex/releases/tag/v${i}`, draft: i === 3, prerelease: i === 4,
@@ -18,6 +29,10 @@ globalThis.fetch = async (input, init) => {
   const page = Number(url.searchParams.get("page") ?? "1");
   const size = Number(url.searchParams.get("per_page"));
   calls.push(page);
+  requestBudgets.push(requestBudget);
+  const latency = pageTimes[page - 1] ?? 0;
+  if (latency >= requestBudget) { clock += requestBudget; throw new DOMException("fixture deadline", "AbortError"); }
+  clock += latency;
   // The old twenty-release request exceeds the existing body cap. No network.
   if (size === 20) return new Response("x".repeat(10 * 1024 * 1024 + 1));
   assert.equal(size, 5);
@@ -35,7 +50,7 @@ globalThis.fetch = async (input, init) => {
   const rows = Array.from({ length: Math.max(0, Math.min(size, count - (page - 1) * size)) }, (_, n) => release((page - 1) * size + n + (page === changedPage ? 100 : 0)));
   return Response.json(rows, { headers: { etag } });
 };
-function reset() { resetDatabase(); mode = "normal"; failurePage = 2; count = 20; calls = []; changedPage = 0; }
+function reset() { resetDatabase(); mode = "normal"; failurePage = 2; count = 20; calls = []; changedPage = 0; clock = 0; pageTimes = []; requestBudgets.length = 0; }
 async function main() {
   reset();
   const first = await runOpenaiCodexReleases();
@@ -44,6 +59,14 @@ async function main() {
   assert.equal(state.writes.length, 1);
   assert.ok(state.writes[0].every(r => r.bodyMd === null && r.provider === "openai"));
   assert.equal(state.writes[0].find(r => r.externalId === "openai/codex:v4")?.type, "prerelease");
+
+  reset(); pageTimes = [6000, 6000, 3000, 3000];
+  assert.equal((await runOpenaiCodexReleases()).inserted, 19);
+  assert.deepEqual(requestBudgets, [20000, 14000, 8000, 5000]);
+  reset(); pageTimes = [6000, 6000, 9000, 0];
+  await assert.rejects(runOpenaiCodexReleases(), /page 3 request deadline exceeded/);
+  assert.deepEqual(calls, [1, 2, 3]); assert.equal(state.writes.length, 0);
+  assert.equal(clock, 20000);
 
   for (const failure of ["http", "oversized", "malformed", "schema", "network"] as Mode[]) {
     reset(); mode = failure;
@@ -85,4 +108,8 @@ async function main() {
   assert.equal(state.stored.size,19);
   console.log("PASS: bounded 20-release pagination, body cap, no fetch retries, drafts/prereleases, all-or-nothing reads, warm retry after fetch/write failure, persisted ETag, empty/short pages and duplicate delivery.");
 }
-main().catch(error => { console.error(error); process.exitCode = 1; }).finally(() => { globalThis.fetch = originalFetch; });
+main().catch(error => { console.error(error); process.exitCode = 1; }).finally(() => {
+  globalThis.fetch = originalFetch; globalThis.setTimeout = originalSetTimeout;
+  if (originalNow) Object.defineProperty(performance, "now", originalNow);
+  else Reflect.deleteProperty(performance, "now");
+});

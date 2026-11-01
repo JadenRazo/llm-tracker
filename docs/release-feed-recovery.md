@@ -10,9 +10,19 @@ The query uses GitHub's documented [release pagination parameters](https://docs.
 The adapter now requests at most four five-release pages from the same endpoint,
 validates every required page before its single idempotent insert, and retains
 the existing twenty-release scope, draft/prerelease policy and link-only output.
-Extra asset metadata is discarded. The 10 MiB cap stays unchanged. Each request
-has a five-second deadline and no automatic retry; failed reads remain failures.
-This bounds HTTP waiting to twenty seconds, excluding cache/database operations.
+Extra asset metadata is discarded. The 10 MiB cap stays unchanged. All requests
+share one twenty-second deadline with no automatic retry; failed reads remain
+failures. This bounds HTTP waiting to twenty seconds, excluding cache/database
+operations. Each page receives only the remaining time. Exhaustion and transport
+errors identify the page without exposing raw provider errors.
+
+The initial deployment used five seconds per page. Both its standard deployment
+check and the subsequent natural poll recorded abort errors; no source events
+were written. The opsbox's sub-second measurements did not represent Lambda's
+transport. Replacing the per-page division with a shared deadline preserves the
+same total twenty-second bound and fixed Lambda timeout, while allowing a slow
+page to use time saved by others. Injected-clock tests cover six-second pages
+within eighteen seconds total and exhaustion at twenty seconds without writes.
 
 Every page reuses only its own validators from a successfully recorded source
 run. An unchanged first page does not skip later pages: an older draft could
