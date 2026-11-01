@@ -22,6 +22,7 @@
     "db:backfill-provider": "node --env-file=.env scripts/backfill-provider.mjs",
     "build:poller": "node scripts/build-poller.mjs",
     "check:prerender": "node scripts/check-no-prerendered-db-routes.mjs",
+    "check:404": "node scripts/check-not-found.mjs",
     "test:frontier": "node scripts/check-frontier.mjs"
   },
   "dependencies": {

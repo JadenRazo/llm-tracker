@@ -76,3 +76,10 @@ if (offenders.length > 0) {
 console.log(
   `OK — ${prerendered.length} prerendered route(s), all file-backed:\n${prerendered.map((r) => `  ${r}`).join("\n")}`,
 );
+
+// The dedicated 404 response serves the existing built document. Verify the
+// actual standalone package includes it; source/build success alone is not enough.
+const notFound = await readFile(path.join(root, ".next/standalone/.next/server/app/_not-found.html"), "utf8");
+if (!notFound.includes("Page not found") || !notFound.toLowerCase().includes("<!doctype html>")) {
+  throw new Error("Standalone 404 document missing or invalid");
+}
