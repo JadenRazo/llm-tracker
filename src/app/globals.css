@@ -458,7 +458,7 @@
   --color-provider-gemini: #8ab4f8;
   --provider-mark-claude: linear-gradient(110deg, #d97757, #c15f3c);
   --provider-mark-openai: #f5f5f5;
-  --provider-mark-gemini: linear-gradient(110deg, #4285f4 0%, #34a853 32%, #fbbc05 65%, #ea4335 100%);
+  --provider-mark-gemini: linear-gradient(90deg, #4285f4 0% 25%, #34a853 50%, #fbbc05 75%, #ea4335 100%);
 }
 .provider-label { display: inline-flex; align-items: center; gap: 8px; }
 .provider-scope { --color-primary: var(--provider-accent); }
