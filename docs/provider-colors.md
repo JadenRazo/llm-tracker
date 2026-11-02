@@ -16,6 +16,9 @@ and the shared provider layout on provider routes. Do not use gradients as text.
 | OpenAI / ChatGPT | `#F5F5F5` | Monochrome white on the dark surface |
 | Gemini | `#8AB4F8` | Blue `#4285F4`, green `#34A853`, yellow `#FBBC05`, red `#EA4335` |
 
+Gemini holds blue across the first quarter of its horizontal gradient so blue
+stays visible in both small provider dots and thin card rules.
+
 The three text colors have minimum contrast ratios of 6.11:1, 12.55:1 and
 6.49:1 respectively across the background, card and raised surfaces. Claude's
 `#C15F3C` remains decorative because it does not meet small-text AA here.
