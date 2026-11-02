@@ -51,7 +51,7 @@ export async function runOpenaiCodexReleases(): Promise<RunResult> {
 
   // The twenty-release payload outgrew the shared 10 MiB cap. Preserve the
   // same scope with at most four five-release pages, without raising the cap.
-  // No page retry: four 5s request deadlines bound HTTP time to 20s. Fetch and
+  // No page retry: one shared deadline bounds total HTTP time to 20s. Fetch and
   // validate every needed page before the single idempotent database write.
   const releases: GithubRelease[] = [];
   // Store the page validators together in the existing successful-run ETag
@@ -69,12 +69,21 @@ export async function runOpenaiCodexReleases(): Promise<RunResult> {
   }
   const nextPages: z.infer<typeof pageCacheSchema> = [];
   let changed = false;
+  const deadline = performance.now() + 20_000;
   for (let page = 1; page <= 4; page++) {
     const url = `https://api.github.com/repos/${REPO}/releases?per_page=5&page=${page}`;
     const prior = priorPages[page - 1];
-    const res = await fetchConditional(url, page === 1 ? SOURCE_KEY : `${SOURCE_KEY}:page-${page}`, {
-      headers, cacheHeaders: prior ?? {}, maxRetries: 0, timeoutMs: 5_000,
-    });
+    const remaining = Math.floor(deadline - performance.now());
+    if (remaining <= 0) throw new Error(`${REPO} releases page ${page} exhausted the shared request deadline`);
+    let res;
+    try {
+      res = await fetchConditional(url, page === 1 ? SOURCE_KEY : `${SOURCE_KEY}:page-${page}`, {
+        headers, cacheHeaders: prior ?? {}, maxRetries: 0, timeoutMs: remaining,
+      });
+    } catch (error) {
+      const category = error instanceof Error && error.name === "AbortError" ? "request deadline exceeded" : "transport failed";
+      throw new Error(`${REPO} releases page ${page} ${category}`);
+    }
     if (res.unchanged) {
       if (!prior) throw new Error(`${REPO} releases page ${page} returned 304 without committed cache metadata`);
       nextPages.push({ etag: res.etag, lastModified: res.lastModified, count: prior.count });
