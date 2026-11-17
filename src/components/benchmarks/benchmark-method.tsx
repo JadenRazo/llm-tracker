@@ -10,7 +10,7 @@ export function BenchmarkMethod() {
       <h3>Reading a score</h3>
       <ul>
         <li><strong>One score per model.</strong> Where a model has been run at several reasoning-effort settings, the highest independent result in the benchmark’s standard harness is shown with its setting, and the others are listed beneath it.</li>
-        <li><strong>A leader is named only when the data supports it.</strong> Every selected model needs an independent result on the same benchmark and harness, and the published 95% intervals must not overlap. Benchmarks that publish no interval never name a leader.</li>
+        <li><strong>A leader is named only when the data supports it.</strong> Every selected model needs an independent result on the same benchmark and harness, at the same recorded reasoning effort, and their confidence intervals must not overlap. The interval’s level (90% or 95%) and where it comes from is stated with each benchmark. A benchmark with no confidence interval never names a leader, so most rows do not.</li>
         <li><strong>Lab-reported scores are labelled and never ranked.</strong> The lab chose the settings and what to publish, so its number is shown next to the independent one, not in place of it.</li>
         <li><strong>A missing result is not a low score.</strong> “No published result” means nobody has published one for that model yet.</li>
       </ul>

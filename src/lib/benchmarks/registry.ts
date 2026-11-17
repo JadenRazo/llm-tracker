@@ -9,6 +9,8 @@
 //   4. it still separates them (not saturated);
 //   5. its results are published as data, with no key or login.
 // A benchmark that fails 5 cannot be refreshed by the poller and is left out.
+// One that an independent review has found flawed is shown with that warning
+// and is never a default.
 
 export type BenchmarkKey =
   | "eci" | "arc_agi_3" | "frontierswe" | "apex_agents" | "critpt" | "vending_bench_2"
@@ -44,6 +46,13 @@ export interface BenchmarkDefinition {
   saturated?: string;
   /** How the published uncertainty should be read, when there is any. */
   uncertainty?: string;
+  /**
+   * Whether results are run at a reasoning-effort setting. False for a
+   * composite built from many evaluations, where no single setting applies.
+   */
+  effortApplies: boolean;
+  /** A known problem with the benchmark itself, with where it is documented. */
+  caution?: { text: string; url: string };
 }
 
 const EPOCH = "https://epoch.ai/benchmarks";
@@ -54,8 +63,9 @@ export const BENCHMARKS: readonly BenchmarkDefinition[] = [
     measures: "One scale built from many benchmarks, so models that were never run on the same test can still be placed relative to each other.",
     metric: "Index score", unit: "index", direction: "higher", evaluator: "Epoch AI",
     methodologyUrl: "https://epoch.ai/eci", sourceUrl: "https://epoch.ai/eci", feed: "epoch", default: true,
-    rationale: "An independent composite with a published 95% interval, and the broadest coverage of current models.",
-    uncertainty: "95% confidence interval published by Epoch AI.",
+    rationale: "An independent composite with a published confidence interval, and the broadest coverage of current models.",
+    uncertainty: "Epoch AI publishes a 90% confidence interval from 500 bootstrap samples; it is shown as published.",
+    effortApplies: false,
   },
   {
     key: "arc_agi_3", name: "ARC-AGI-3", version: "Semi-private set", capability: "Reasoning on novel tasks",
@@ -63,14 +73,16 @@ export const BENCHMARKS: readonly BenchmarkDefinition[] = [
     metric: "Score", unit: "percent", direction: "higher", evaluator: "ARC Prize Foundation",
     methodologyUrl: "https://arcprize.org/arc-agi/3/", sourceUrl: "https://arcprize.org/leaderboard", feed: "arcprize", default: true,
     rationale: "Run by the benchmark's own foundation on held-back tasks, per reasoning-effort setting, and far from its ceiling.",
+    uncertainty: "No uncertainty interval is published.", effortApplies: true,
   },
   {
     key: "frontierswe", name: "FrontierSWE", version: "v2 (September 2026)", capability: "Software engineering",
-    measures: "Long software engineering tasks (implementation, performance, scientific computing, AI research) with a 20-hour budget per task, every model at maximum reasoning effort.",
+    measures: "Long software engineering tasks (implementation, performance engineering, scientific computing, visual reasoning, AI research) with a 20-hour budget per task, every model at maximum reasoning effort.",
     metric: "Mean score over 5 runs", unit: "percent", direction: "higher", evaluator: "FrontierSWE, mirrored by Epoch AI",
     methodologyUrl: `${EPOCH}/frontierswe`, sourceUrl: "https://www.frontierswe.com/", feed: "epoch", default: true,
     rationale: "Every model runs in the same harness, and the scores are spread widely enough to separate current models.",
     uncertainty: "The publisher reports the best and worst of 5 runs, shown as a range. A range is not a confidence interval.",
+    effortApplies: true,
   },
   {
     key: "apex_agents", name: "APEX-Agents", version: "480 tasks", capability: "Agentic professional work",
@@ -79,20 +91,25 @@ export const BENCHMARKS: readonly BenchmarkDefinition[] = [
     methodologyUrl: `${EPOCH}/apex-agents`, sourceUrl: `${EPOCH}/apex-agents`, feed: "epoch", default: true,
     rationale: "Long-horizon knowledge work rather than coding, with a published margin for each model.",
     uncertainty: "The publisher shows a ± margin without defining it, so it is shown as published and not treated as a confidence interval.",
+    effortApplies: true,
   },
   {
     key: "critpt", name: "CritPt", version: "v1", capability: "Research-level science",
     measures: "Open-ended physics problems modelled on entry-level original research projects.",
     metric: "Accuracy", unit: "percent", direction: "higher", evaluator: "CritPt leaderboard (Artificial Analysis), mirrored by Epoch AI",
-    methodologyUrl: `${EPOCH}/critpt`, sourceUrl: `${EPOCH}/critpt`, feed: "epoch", default: true,
-    rationale: "Research-level reasoning where the best models still score under 40%, reported per reasoning-effort setting.",
+    methodologyUrl: `${EPOCH}/critpt`, sourceUrl: `${EPOCH}/critpt`, feed: "epoch", default: false,
+    rationale: "Research-level reasoning where the best models still score under 40%. Not a default because of the scoring defects below.",
+    uncertainty: "No uncertainty interval is published.", effortApplies: true,
+    caution: { text: "Epoch AI's review (October 2026) rates this benchmark Flawed: two audits found scoring defects in at least 20% of its challenges.", url: `${EPOCH}/critpt/review` },
   },
   {
     key: "vending_bench_2", name: "Vending-Bench 2", version: "Mean of 5 runs", capability: "Long-horizon autonomy",
     measures: "Running a simulated vending business for a simulated year; the score is the money balance at the end.",
     metric: "Final balance", unit: "usd", direction: "higher", evaluator: "Andon Labs, mirrored by Epoch AI",
-    methodologyUrl: `${EPOCH}/vending-bench-2`, sourceUrl: "https://andonlabs.com/evals/vending-bench-2", feed: "epoch", default: true,
-    rationale: "Tests staying coherent over a very long task, and current models differ by thousands of dollars.",
+    methodologyUrl: `${EPOCH}/vending-bench-2`, sourceUrl: "https://andonlabs.com/evals/vending-bench-2", feed: "epoch", default: false,
+    rationale: "Tests staying coherent over a very long task. Not a default because of the problems below.",
+    uncertainty: "No uncertainty interval is published.", effortApplies: true,
+    caution: { text: "Epoch AI's review (October 2026) rates this benchmark Flawed: the simulation has exploitable flaws, and agents from different providers get different amounts of usable context.", url: `${EPOCH}/vending-bench-2/review` },
   },
   {
     key: "gpqa_diamond", name: "GPQA Diamond", version: "198 questions", capability: "Graduate-level science questions",
@@ -101,7 +118,8 @@ export const BENCHMARKS: readonly BenchmarkDefinition[] = [
     methodologyUrl: `${EPOCH}/gpqa-diamond`, sourceUrl: `${EPOCH}/gpqa-diamond`, feed: "epoch", default: false,
     rationale: "Widely quoted by labs, so it is the clearest place to set a lab's own number beside an independent run.",
     saturated: "Top models are within a point or two of the estimated 97% ceiling, so small gaps mean little.",
-    uncertainty: "95% interval computed here as 1.96 times the published standard error.",
+    uncertainty: "95% Wilson interval computed here from the score over 198 questions, used only when Epoch AI's published standard error agrees.",
+    effortApplies: true,
   },
   {
     key: "arc_agi_2", name: "ARC-AGI-2", version: "Semi-private set", capability: "Abstract reasoning puzzles",
@@ -110,6 +128,7 @@ export const BENCHMARKS: readonly BenchmarkDefinition[] = [
     methodologyUrl: "https://arcprize.org/arc-agi/2/", sourceUrl: "https://arcprize.org/leaderboard", feed: "arcprize", default: false,
     rationale: "Still separates mid-tier models from the top, and has results for most new releases on launch day.",
     saturated: "The strongest models score within about two points of each other, near the human panel.",
+    uncertainty: "No uncertainty interval is published.", effortApplies: true,
   },
   {
     key: "frontiermath_erdos", name: "FrontierMath Erdős", version: "68 open problems", capability: "Open mathematics problems",
@@ -117,21 +136,22 @@ export const BENCHMARKS: readonly BenchmarkDefinition[] = [
     metric: "Problems solved", unit: "percent", direction: "higher", evaluator: "Epoch AI",
     methodologyUrl: `${EPOCH}/frontiermath-erdos`, sourceUrl: `${EPOCH}/frontiermath-erdos`, feed: "epoch", default: false,
     rationale: "The one mathematics evaluation here that is not saturated, but few models have been run and scores sit near zero.",
-    uncertainty: "95% interval computed here as 1.96 times the published standard error.",
+    uncertainty: "95% Wilson interval computed here from the score over 68 problems, used only when Epoch AI's published standard error agrees.",
+    effortApplies: true,
   },
   {
     key: "sec_bench_pro", name: "SEC-Bench Pro", version: "As run by the reporting lab", capability: "Reproducing software vulnerabilities",
-    measures: "Reproducing known vulnerabilities in real codebases from a description.",
+    measures: "Finding a known vulnerability in a vulnerable build of a real codebase and writing a program that triggers it.",
     metric: "Pass@1", unit: "percent", direction: "higher", evaluator: "Reporting lab",
     methodologyUrl: "https://deploymentsafety.openai.com/gpt-6-2-astra-sol", sourceUrl: "https://deploymentsafety.openai.com/gpt-6-2-astra-sol", feed: "reported", default: false,
-    rationale: "Only lab-reported results are available.",
+    rationale: "Only lab-reported results are available.", effortApplies: true,
   },
   {
     key: "mle_bench_revised", name: "MLE-Bench Revised", version: "72 problems", capability: "Machine-learning engineering",
-    measures: "Kaggle-style machine-learning competitions, scored against human leaderboards.",
+    measures: "Public machine-learning competitions; each solution is ranked against a reference set of strong solutions, not against human entrants.",
     metric: "Mean reference percentile (0–100)", unit: "index", direction: "higher", evaluator: "Reporting lab",
     methodologyUrl: "https://deploymentsafety.openai.com/gpt-6-2-astra-sol", sourceUrl: "https://deploymentsafety.openai.com/gpt-6-2-astra-sol", feed: "reported", default: false,
-    rationale: "Only lab-reported results are available.",
+    rationale: "Only lab-reported results are available.", effortApplies: true,
   },
 ];
 
@@ -145,7 +165,8 @@ export const EXCLUDED_BENCHMARKS: readonly { name: string; reason: string }[] = 
   { name: "SWE-bench Verified", reason: "The public leaderboard has no entry newer than February 2026 and its top results are self-submitted agent systems." },
   { name: "METR time horizons", reason: "The published results page states it is no longer actively updated." },
   { name: "Artificial Analysis Intelligence Index, Vals Index", reason: "Their data needs an account or API key, or is not published as open data." },
-  { name: "Terminal-Bench 4.1, LiveBench 2.0", reason: "Credible, but neither publishes a stable data feed the tracker can refresh from." },
+  { name: "Terminal-Bench 4.1, LiveBench 2.0", reason: "Credible, but neither publishes its own data feed, and Epoch AI's mirrors of them stop at models released in April 2026 and November 2025." },
+  { name: "CritPt and Vending-Bench 2 as defaults", reason: "Both are shown under More results with the warning that Epoch AI's review rates them Flawed." },
   { name: "LMArena", reason: "Its public data endpoint was returning errors when this set was chosen; it will be reconsidered." },
 ];
 

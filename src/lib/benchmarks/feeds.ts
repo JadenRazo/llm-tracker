@@ -24,11 +24,11 @@ export const benchmarkRowSchema = z.object({
   low: z.number().finite().nullable(),
   high: z.number().finite().nullable(),
   /**
-   * ci95: a 95% interval. range: best and worst of repeated runs. margin: a ±
-   * figure the publisher shows without defining it. Only ci95 can support a
-   * claim that one model leads another.
+   * ci90 / ci95: a confidence interval at that level. range: best and worst of
+   * repeated runs. margin: a ± figure the publisher shows without defining it.
+   * Only a confidence interval can support a claim that one model leads another.
    */
-  interval: z.enum(["ci95", "range", "margin"]).nullable(),
+  interval: z.enum(["ci90", "ci95", "range", "margin"]).nullable(),
   organization: z.string().max(120),
   /** Model release date as the feed gives it (YYYY-MM-DD), when it does. */
   released: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable(),
@@ -68,7 +68,13 @@ interface EpochFile {
   min: number; max: number;
   /** Minimum rows expected; fewer means the file changed shape. */
   floor: number;
-  stderr?: { column: string; scale: number };
+  /**
+   * A proportion of this many questions, with the publisher's standard error in
+   * the named column. The interval shown is a 95% Wilson interval on the score:
+   * the usual "1.96 standard errors" collapses to nothing at 0% or 100% and
+   * understates the upper bound for small counts.
+   */
+  proportion?: { trials: number; stderr: string };
   /** A published ± whose meaning the publisher does not state. */
   margin?: { column: string; scale: number };
   range?: { low: string; high: string };
@@ -81,11 +87,21 @@ export const EPOCH_FILES: Record<string, EpochFile> = {
   "apex_agents_external.csv": { benchmark: "apex_agents", score: "Pass@1 score", scale: 100, min: 0, max: 100, floor: 20, margin: { column: "Pass@1 Standard Error", scale: 1 }, url: `${EPOCH_PAGE}/apex-agents` },
   "critpt_external.csv": { benchmark: "critpt", score: "Accuracy", scale: 100, min: 0, max: 100, floor: 50, url: `${EPOCH_PAGE}/critpt` },
   "vending_bench_2_external.csv": { benchmark: "vending_bench_2", score: "Score", scale: 1, min: -1e6, max: 1e7, floor: 20, url: `${EPOCH_PAGE}/vending-bench-2` },
-  "gpqa_diamond.csv": { benchmark: "gpqa_diamond", score: "Best score (across scorers)", scale: 100, min: 0, max: 100, floor: 50, stderr: { column: "stderr", scale: 100 }, url: `${EPOCH_PAGE}/gpqa-diamond` },
-  "frontiermath_erdos.csv": { benchmark: "frontiermath_erdos", score: "mean_score", scale: 100, min: 0, max: 100, floor: 5, stderr: { column: "stderr", scale: 100 }, url: `${EPOCH_PAGE}/frontiermath-erdos` },
+  "gpqa_diamond.csv": { benchmark: "gpqa_diamond", score: "Best score (across scorers)", scale: 100, min: 0, max: 100, floor: 50, proportion: { trials: 198, stderr: "stderr" }, url: `${EPOCH_PAGE}/gpqa-diamond` },
+  "frontiermath_erdos.csv": { benchmark: "frontiermath_erdos", score: "mean_score", scale: 100, min: 0, max: 100, floor: 5, proportion: { trials: 68, stderr: "stderr" }, url: `${EPOCH_PAGE}/frontiermath-erdos` },
 };
 const ECI_FILE = "epoch_capabilities_index/eci_scores.csv";
-export const EPOCH_ARCHIVE_FILES = [ECI_FILE, ...Object.keys(EPOCH_FILES)];
+/** States the confidence level of the interval columns in the scores file. */
+const ECI_BOOTSTRAPS = "epoch_capabilities_index/eci_bootstraps.json";
+export const EPOCH_ARCHIVE_FILES = [ECI_FILE, ECI_BOOTSTRAPS, ...Object.keys(EPOCH_FILES)];
+
+/** 95% Wilson score interval for a proportion, in percent. */
+export function wilsonInterval(fraction: number, trials: number): { low: number; high: number } {
+  const z = 1.96, z2 = z * z, denominator = 1 + z2 / trials;
+  const centre = (fraction + z2 / (2 * trials)) / denominator;
+  const half = (z * Math.sqrt((fraction * (1 - fraction)) / trials + z2 / (4 * trials * trials))) / denominator;
+  return { low: Math.max(0, centre - half) * 100, high: Math.min(1, centre + half) * 100 };
+}
 
 function need(row: Record<string, string>, column: string, file: string): string {
   if (!(column in row)) throw new Error(`${file} has no "${column}" column`);
@@ -99,14 +115,19 @@ export function parseEpochArchive(archive: Uint8Array): BenchmarkRow[] {
 
   const eci = parseCsv(files.get(ECI_FILE)!);
   if (eci.length < 100) throw new Error(`${ECI_FILE} has only ${eci.length} rows`);
+  // The scores file gives an interval without its level; the bootstrap file
+  // states it (0.9 when this was written). Read only the header of that file.
+  const level = files.get(ECI_BOOTSTRAPS)!.slice(0, 2000).match(/"ci_level"\s*:\s*(0\.\d+)/)?.[1];
+  const eciInterval: BenchmarkRow["interval"] = level === "0.9" ? "ci90" : level === "0.95" ? "ci95" : null;
+  if (level === undefined) throw new Error(`${ECI_BOOTSTRAPS} does not state the interval's confidence level`);
   for (const row of eci) {
     const organization = need(row, "Organization", ECI_FILE);
     if (!TRACKED_LABS.test(organization)) continue;
     const label = need(row, "Model", ECI_FILE), score = number(need(row, "eci", ECI_FILE), `${ECI_FILE} eci for ${label}`);
     const low = optional(need(row, "eci_ci_low", ECI_FILE)), high = optional(need(row, "eci_ci_high", ECI_FILE));
     if (score < 0 || score > 1000) throw new Error(`${ECI_FILE} score out of range for ${label}`);
-    const interval = low !== null && high !== null && low <= score && score <= high;
-    rows.push({ benchmark: "eci", label, model: label, effort: null, harness: null, score: round(score, 2), low: interval ? round(low, 2) : null, high: interval ? round(high, 2) : null, interval: interval ? "ci95" : null, organization, released: date(row.date), note: null, url: "https://epoch.ai/eci" });
+    const interval = eciInterval !== null && low !== null && high !== null && low <= score && score <= high;
+    rows.push({ benchmark: "eci", label, model: label, effort: null, harness: null, score: round(score, 2), low: interval ? round(low, 2) : null, high: interval ? round(high, 2) : null, interval: interval ? eciInterval : null, organization, released: date(row.date), note: null, url: "https://epoch.ai/eci" });
   }
 
   for (const [name, spec] of Object.entries(EPOCH_FILES)) {
@@ -122,14 +143,22 @@ export function parseEpochArchive(archive: Uint8Array): BenchmarkRow[] {
       if (score < spec.min || score > spec.max) throw new Error(`${name} score out of range for ${label}`);
       const { model, effort, stated } = splitEpochLabel(label);
       let low: number | null = null, high: number | null = null, interval: BenchmarkRow["interval"] = null;
-      if (spec.stderr) {
-        const stderr = optional(need(row, spec.stderr.column, name));
-        if (stderr !== null && stderr >= 0) { const half = 1.96 * stderr * spec.stderr.scale; low = Math.max(spec.min, score - half); high = Math.min(spec.max, score + half); interval = "ci95"; }
+      if (spec.proportion) {
+        const fraction = score / 100, stderr = optional(need(row, spec.proportion.stderr, name));
+        // Use the interval only when the published standard error agrees that
+        // this is one pass over `trials` questions. A larger one means more
+        // variance than a simple proportion has, and ours would be too narrow.
+        const binomial = Math.sqrt((fraction * (1 - fraction)) / spec.proportion.trials);
+        if (stderr !== null && stderr >= 0 && stderr <= binomial * 1.25 + 1e-9) {
+          const wilson = wilsonInterval(fraction, spec.proportion.trials);
+          low = wilson.low; high = wilson.high; interval = "ci95";
+        }
       } else if (spec.margin) {
         // Epoch names this column a standard error; the benchmark's own
-        // leaderboard prints the same figure as a bare "±". Keep it as published.
+        // leaderboard prints the same figure as a bare "±". Keep it exactly as
+        // published: no clamping, so the page can print the same number back.
         const margin = optional(need(row, spec.margin.column, name));
-        if (margin !== null && margin >= 0) { low = Math.max(spec.min, score - margin * spec.margin.scale); high = Math.min(spec.max, score + margin * spec.margin.scale); interval = "margin"; }
+        if (margin !== null && margin >= 0) { low = score - margin * spec.margin.scale; high = score + margin * spec.margin.scale; interval = "margin"; }
       } else if (spec.range) {
         const worst = optional(need(row, spec.range.low, name)), best = optional(need(row, spec.range.high, name));
         if (worst !== null && best !== null && worst * spec.scale <= score && score <= best * spec.scale) { low = worst * spec.scale; high = best * spec.scale; interval = "range"; }
@@ -166,7 +195,9 @@ export function parseArcPrize(evaluationsJson: string, modelsJson: string): Benc
     // The harness is part of the result's identity: provider-adapter runs score
     // far higher than standard-harness runs of the same model and effort.
     const adapter = /-provider-adapter$/.test(meta.id) || /provider adapter harness/i.test(notes);
-    const stated = notes.match(/'([a-z]+)' reasoning effort/)?.[1];
+    // The notes usually state the effort. Some rows have no notes, or word it
+    // differently, and then the name's own "(High)" suffix is the record of it.
+    const stated = notes.match(/'([a-z]+)' (?:reasoning|output) effort/)?.[1] ?? meta.displayName.match(/\(([A-Za-z]+)\)\s*$/)?.[1]?.toLowerCase();
     const effort = stated && (EFFORTS as readonly string[]).includes(stated) ? (stated as Effort) : null;
     // modelGroup is the model without its effort suffix; without it the row cannot be attributed.
     const group = (meta.modelGroup ?? "").replace(/-provider-adapter$/, "");

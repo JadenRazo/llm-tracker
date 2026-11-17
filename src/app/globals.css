@@ -146,6 +146,9 @@
 .benchmark-facts dt { color: var(--color-text-muted); font-size: 13px; margin: 0; }
 .benchmark-facts dd { color: var(--color-text-secondary); font-size: 13px; line-height: 1.6; }
 .benchmark-facts .benchmark-caution, .profile-benchmarks .benchmark-caution { margin-top: 8px; padding-left: 10px; border-left: 2px solid var(--color-gold); color: var(--color-text-secondary); }
+.benchmark-facts .benchmark-uncertainty { margin-top: 8px; color: var(--color-text-muted); }
+.benchmark-caution strong { color: var(--color-text-primary); font-weight: 600; }
+.benchmark-caution a { display: inline-flex; align-items: center; gap: 5px; min-height: 44px; color: var(--color-leaf); text-decoration: underline; text-underline-offset: 3px; }
 .benchmark-links { display: flex; flex-wrap: wrap; gap: 0 18px; margin-top: 4px; }
 .comparison-table .benchmark-links a, .benchmark-cards .benchmark-links a, .benchmark-result a, .benchmark-reported a, .profile-benchmarks a { display: inline-flex; align-items: center; gap: 5px; min-height: 44px; color: var(--color-leaf); font-size: 13px; }
 .benchmark-verdict { margin-top: 8px; font-size: 13px; line-height: 1.6; color: var(--color-text-muted); }

@@ -43,18 +43,22 @@ them, and publishes results as data the tracker can refresh without a key.
 | Reasoning on novel tasks | ARC-AGI-3 (semi-private) | ARC Prize Foundation | Held-back tasks, results per effort setting, far from its ceiling |
 | Software engineering | FrontierSWE v2 | FrontierSWE | One harness for every model; wide spread |
 | Agentic professional work | APEX-Agents | Mercor | Long non-coding tasks with a published ± margin |
-| Research-level science | CritPt v1 | CritPt leaderboard | Top models still under 40%; per-effort results |
-| Long-horizon autonomy | Vending-Bench 2 | Andon Labs | A year-long simulated task with large differences between models |
 
 Shown only when a selected model has a result: GPQA Diamond and ARC-AGI-2 (both
-marked saturated), FrontierMath Erdős (few models run), and lab-reported
-benchmarks. The definitions, including the reason for each, are in
+marked saturated), FrontierMath Erdős (few models run), CritPt v1 and
+Vending-Bench 2, and lab-reported benchmarks. CritPt and Vending-Bench 2 were
+first chosen as defaults and then removed: Epoch AI's own reviews rate both
+Flawed (scoring defects in at least 20% of CritPt's challenges; an exploitable
+simulation and unequal context between providers in Vending-Bench 2). They are
+shown with that warning and a link to the review. Check a benchmark's Epoch page
+for a review verdict before making it a default. The definitions, including the reason for each, are in
 `src/lib/benchmarks/registry.ts`, which is also what the page renders.
 
 Left out, with the reason shown on the page: SWE-bench Verified (no entry since
 February 2026), METR time horizons (no longer updated), Artificial Analysis and
 Vals (account, key or no open data), Terminal-Bench 4.1 and LiveBench 2.0 (no
-stable data feed), LMArena (its data endpoint was failing when the set was
+data feed of their own, and Epoch's mirrors stop at April 2026 and November
+2025), LMArena (its data endpoint was failing when the set was
 chosen).
 
 ## What the page claims
@@ -67,12 +71,18 @@ chosen).
   setting. Other settings, and ARC Prize's provider-adapter harness, are listed
   beneath it. Provider-adapter runs score far higher and are never mixed in.
 - **A leader is named only when the data supports it**: every selected model has
-  an independent result on the same benchmark and harness, the reasoning effort
-  is stated, and the published 95% intervals do not overlap. Otherwise the row
-  says why not. Today that means most rows name no leader. A 95% interval is
-  either published as one (Epoch Capabilities Index) or computed as 1.96 times a
-  standard error from Epoch AI's own runs. A best-to-worst range of runs, or a ±
-  the publisher does not define (APEX-Agents), is shown but never used.
+  an independent result on the same benchmark and harness, at the same recorded
+  reasoning effort, and their confidence intervals (of one level) do not
+  overlap. Otherwise the row says why not. Today that means most rows name no
+  leader. Where the intervals come from:
+  - Epoch Capabilities Index: Epoch publishes a **90%** interval (the level is
+    read from the archive's `eci_bootstraps.json`), shown and named as 90%.
+  - GPQA Diamond and FrontierMath Erdős: a 95% Wilson interval computed from
+    the score and the number of questions, used only when Epoch's published
+    standard error is consistent with a single pass over them. "1.96 standard
+    errors" is not used: it collapses to nothing at 0% and misleads near it.
+  - A best-to-worst range of runs (FrontierSWE), or a ± the publisher does not
+    define (APEX-Agents), is shown as published and never used.
 - **Lab-reported scores are labelled and never ranked.**
 - **Missing is not zero.** A model with no result shows "No published result".
   A failed read shows "temporarily unavailable", never "no results".

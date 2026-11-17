@@ -50,7 +50,7 @@ function ModelIdentity({ model }: { model: Model }) {
         <code className="model-id min-w-0 flex-1 whitespace-normal break-all">
           {model.id}
         </code>
-        <Link href={`/compare?models=${model.id}`} className="compare-model-link" aria-label={`Compare ${model.displayName || model.id} on benchmarks`}>
+        <Link href={`/compare?models=${encodeURIComponent(model.id)}`} className="compare-model-link" aria-label={`Compare ${model.displayName || model.id} on benchmarks`}>
           Compare
         </Link>
         <button

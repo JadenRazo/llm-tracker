@@ -15,7 +15,8 @@ export const metadata: Metadata = { title: "Compare AI models on benchmarks", de
 
 export default async function ComparePage({ searchParams }: { searchParams: Promise<{ models?: string | string[] }> }) {
   const params = await searchParams;
-  const raw = typeof params.models === "string" ? params.models : undefined;
+  // A repeated parameter (?models=a&models=b) is read as one list, not dropped.
+  const raw = Array.isArray(params.models) ? params.models.join(",") : params.models;
   const view = await loadComparison(raw);
   const { selected, table, benchmarks, frontier } = view;
   // Verified profiles for the selected models, including an earlier pick named in the URL.
@@ -41,7 +42,8 @@ export default async function ComparePage({ searchParams }: { searchParams: Prom
         <p>Choose up to four tracked models from any lab. Your selection stays in the URL, so you can bookmark or share it.</p>
       </header>
 
-      {view.unresolved.length > 0 && <p role="status" className="frontier-source-note needs-review">{view.directoryUnavailable ? "The model catalog is temporarily unavailable, so these could not be looked up" : "Not a tracked model"}: {view.unresolved.join(", ")}.</p>}
+      {view.directoryUnavailable && <p role="status" className="frontier-source-note needs-review">The model catalog is temporarily unavailable, so only the current picks can be chosen right now. This is a problem on our side.</p>}
+      {view.unresolved.length > 0 && <p role="status" className="frontier-source-note needs-review">{view.directoryUnavailable ? "Could not be looked up" : "Not a tracked model"}: {view.unresolved.join(", ")}.</p>}
       <ModelPicker options={view.options} selected={selected.map((m) => m.id)} defaultCount={view.defaultCount} />
       <p className="benchmark-presets"><span>Quick comparisons:</span>{presets.map((preset) => <Link key={preset.href} href={preset.href}>{preset.label}</Link>)}</p>
 
@@ -55,7 +57,7 @@ export default async function ComparePage({ searchParams }: { searchParams: Prom
           <div className="comparison-empty"><h3>Choose your first model.</h3><p>Add models above to see their published benchmark results side by side.</p></div>
         ) : (
           <>
-            <p className="comparison-explainer">{selected.length === 1 ? `Published results for ${names}. Add another model to compare.` : `Published results for ${names}.`} Each score shows the benchmark version, the metric, who ran it and the settings used. A leader is named only when the results are like for like and their intervals do not overlap. {refreshed && <>Sources last checked <time dateTime={refreshed}>{verificationLabel(refreshed)}</time>.</>}</p>
+            <p className="comparison-explainer">{selected.length === 1 ? `Published results for ${names}. Add another model to compare.` : `Published results for ${names}.`} Each score shows the benchmark version, the metric, who ran it and the settings used. A leader is named only when the results are like for like (same harness, same recorded effort) and their confidence intervals do not overlap. {refreshed && <>Sources last checked <time dateTime={refreshed}>{verificationLabel(refreshed)}</time>.</>}</p>
             {degraded.length > 0 && <p role="status" className="frontier-source-note needs-review">Some results may be out of date: the latest refresh of {degraded.map((s) => (s.source === "benchmarks_epoch" ? "Epoch AI’s data" : "ARC Prize’s data")).join(" and ")} did not complete. Showing the last accepted results.</p>}
             <BenchmarkComparison models={selected} rows={table.defaults} caption={`Benchmark results for ${names}`} />
             {table.more.length > 0 && (

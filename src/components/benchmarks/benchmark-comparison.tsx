@@ -17,7 +17,9 @@ function BenchmarkFacts({ spec }: { spec: BenchmarkDefinition }) {
         <div><dt>Metric</dt><dd>{spec.metric} · {spec.direction === "higher" ? "higher is better" : "lower is better"}</dd></div>
         <div><dt>Run by</dt><dd>{spec.evaluator}{spec.feed === "reported" ? "" : " (independent)"}</dd></div>
       </dl>
+      {spec.uncertainty && <p className="benchmark-uncertainty">{spec.uncertainty}</p>}
       {spec.saturated && <p className="benchmark-caution">{spec.saturated}</p>}
+      {spec.caution && <p className="benchmark-caution"><strong>Known problems.</strong> {spec.caution.text} <a href={spec.caution.url}>Read the review<ArrowUpRight size={13} aria-hidden /></a></p>}
       <p className="benchmark-links"><a href={spec.methodologyUrl}>Method<ArrowUpRight size={13} aria-hidden /></a><a href={spec.sourceUrl}>Published results<ArrowUpRight size={13} aria-hidden /></a></p>
     </div>
   );

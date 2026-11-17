@@ -23,6 +23,15 @@ export const BENCHMARK_URLS = {
   arcModels: "https://arcprize.org/media/data/models.json",
 } as const;
 
+/**
+ * Bump when parsing changes what a row says. A stored validator is tagged with
+ * the version that parsed its body, so "304 Not Modified" can never keep rows
+ * that an older parser produced.
+ */
+export const BENCHMARK_PARSER_VERSION = "2026-11-17.2";
+const tagged = (etag: string | null) => (etag ? `${BENCHMARK_PARSER_VERSION} ${etag}` : null);
+const untagged = (stored: string | null | undefined) => (stored?.startsWith(`${BENCHMARK_PARSER_VERSION} `) ? stored.slice(BENCHMARK_PARSER_VERSION.length + 1) : null);
+
 const MAX_BYTES = 12 * 1024 * 1024;
 const DEADLINE_MS = 60_000;
 
@@ -93,7 +102,7 @@ export async function syncBenchmarks(source: BenchmarkSource, db: Database = get
   let extracted: Awaited<ReturnType<typeof extractBenchmarks>>;
   try {
     // A stored validator is only usable while the rows it described are still held.
-    extracted = await extractBenchmarks(source, previous?.contentHash ? previous.etag : null, fetcher);
+    extracted = await extractBenchmarks(source, previous?.contentHash ? untagged(previous.etag) : null, fetcher);
   } catch (error) {
     await fail(diagnostic(error));
     // An unreachable publisher is not a defect here. It is recorded and shows as
@@ -106,7 +115,7 @@ export async function syncBenchmarks(source: BenchmarkSource, db: Database = get
     await db.update(benchmarkSnapshots).set({ verifiedAt: started, attemptedAt: started, error: null }).where(eq(benchmarkSnapshots.source, source));
     return { inserted: 0, updated: 0, skipped: 0, status: "unchanged" };
   }
-  const { rows, etag } = extracted, contentHash = rowsHash(rows);
+  const rows = extracted.rows, etag = tagged(extracted.etag), contentHash = rowsHash(rows);
   if (previous?.contentHash === contentHash) {
     await db.update(benchmarkSnapshots).set({ verifiedAt: started, attemptedAt: started, error: null, etag }).where(eq(benchmarkSnapshots.source, source));
     return { inserted: 0, updated: 0, skipped: 0, status: "unchanged", lastSeenHash: contentHash };

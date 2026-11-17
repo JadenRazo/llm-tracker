@@ -1,12 +1,12 @@
 // Decide what one comparison cell shows and whether a row may name a leader.
 //
 // A leader is named only when the numbers support it: every selected model has
-// an independent result on the same benchmark, from the same harness, and the
-// benchmark publishes intervals that do not overlap. Anything less gets the
-// scores and the reason no leader is named.
+// an independent result on the same benchmark, from the same harness, at the
+// same recorded reasoning effort, with confidence intervals of one level that
+// do not overlap. Anything less gets the scores and the reason no leader is named.
 
 import { benchmark as definition, BENCHMARKS, type BenchmarkDefinition, type BenchmarkKey } from "./registry";
-import { EFFORT_NOT_STATED, type BenchmarkRow } from "./feeds";
+import { EFFORTS, EFFORT_NOT_STATED, type BenchmarkRow } from "./feeds";
 import { modelMatcher, type TrackedModel } from "./identity";
 import { REPORTED_SCORES, type ReportedScore } from "./provider-reported";
 
@@ -17,7 +17,7 @@ export interface ModelResult {
   score: number;
   low: number | null;
   high: number | null;
-  interval: "ci95" | "range" | "margin" | null;
+  interval: "ci90" | "ci95" | "range" | "margin" | null;
   effort: string | null;
   harness: string | null;
   note: string | null;
@@ -73,7 +73,10 @@ const comparableHarness = (row: BenchmarkRow) => row.harness !== "provider-adapt
 export function benchmarkCell(key: BenchmarkKey, modelId: string, rows: readonly BenchmarkRow[] | undefined, reportedScores: readonly ReportedScore[] = REPORTED_SCORES): BenchmarkCell {
   const spec = definition(key);
   const mine = (rows ?? []).filter((row) => row.benchmark === key);
-  const better = (a: BenchmarkRow, b: BenchmarkRow) => (spec.direction === "higher" ? b.score - a.score : a.score - b.score) || (a.label < b.label ? -1 : 1);
+  // Best score first. On a tie the higher effort is shown, so two models that
+  // tie across settings are not reported as run at different ones.
+  const rank = (row: BenchmarkRow) => (row.effort ? EFFORTS.indexOf(row.effort) : -1);
+  const better = (a: BenchmarkRow, b: BenchmarkRow) => (spec.direction === "higher" ? b.score - a.score : a.score - b.score) || rank(b) - rank(a) || (a.label < b.label ? -1 : 1);
   // The score shown is the model's best published configuration in the
   // comparable harness; its effort is displayed, and the rest are listed.
   const comparable = mine.filter(comparableHarness).sort(better);
@@ -95,15 +98,20 @@ export function compareBenchmark(key: BenchmarkKey, models: readonly ComparedMod
   else if (missing.length === models.length) verdict = cells.some((cell) => cell.reported.length) ? "Only lab-reported results exist for these models. Lab-reported scores are not ranked." : "No published result for these models.";
   else if (missing.length) verdict = `No leader named: no independent result for ${named(missing)}.`;
   else if (new Set(cells.map((cell) => cell.primary!.harness ?? "")).size > 1) verdict = "No leader named: these results come from different harnesses.";
-  else if (cells.some((cell) => cell.primary!.note === EFFORT_NOT_STATED)) verdict = "No leader named: the data feed does not record which reasoning-effort setting was used, so the runs may not be like for like.";
-  else if (!cells.every((cell) => cell.primary!.interval === "ci95")) verdict = cells.some((cell) => cell.primary!.interval === "range") ? "No leader named: the publisher reports a best-to-worst range of runs, not a confidence interval."
-    : cells.some((cell) => cell.primary!.interval === "margin") ? "No leader named: the publisher shows a ± margin without saying what it represents." : "No leader named: this benchmark publishes no uncertainty interval.";
+  else if (spec.effortApplies && cells.some((cell) => cell.primary!.effort === null)) verdict = cells.some((cell) => cell.primary!.note === EFFORT_NOT_STATED)
+    ? "No leader named: the data feed does not record which reasoning-effort setting was used, so the runs may not be like for like."
+    : "No leader named: the reasoning-effort setting is not recorded for every model, so the runs may not be like for like.";
+  else if (spec.effortApplies && new Set(cells.map((cell) => cell.primary!.effort)).size > 1) verdict = `No leader named: the models were run at different reasoning-effort settings (${[...new Set(cells.map((cell) => effortLabel(cell.primary!.effort)!.toLowerCase()))].join(", ")}).`;
+  else if (!cells.every((cell) => cell.primary!.interval === "ci90" || cell.primary!.interval === "ci95")) verdict = cells.some((cell) => cell.primary!.interval === "range") ? "No leader named: the publisher reports a best-to-worst range of runs, not a confidence interval."
+    : cells.some((cell) => cell.primary!.interval === "margin") ? "No leader named: the publisher shows a ± margin without saying what it represents." : "No leader named: no confidence interval is available for every model.";
+  else if (new Set(cells.map((cell) => cell.primary!.interval)).size > 1) verdict = "No leader named: the intervals are at different confidence levels.";
   else {
     const order = cells.map((_, i) => i).sort((a, b) => (spec.direction === "higher" ? cells[b].primary!.score - cells[a].primary!.score : cells[a].primary!.score - cells[b].primary!.score));
     const top = cells[order[0]].primary!;
     const clear = order.slice(1).every((i) => (spec.direction === "higher" ? top.low! > cells[i].primary!.high! : top.high! < cells[i].primary!.low!));
-    if (clear) { leader = order[0]; verdict = `${models[order[0]].name} leads: its 95% interval does not overlap any other selected model’s.`; }
-    else verdict = "No leader named: the 95% intervals overlap, so the difference may be noise.";
+    const level = top.interval === "ci90" ? "90%" : "95%";
+    if (clear) { leader = order[0]; verdict = `${models[order[0]].name} leads: its ${level} interval does not overlap any other selected model’s.`; }
+    else verdict = `No leader named: the ${level} intervals overlap, so the difference may be noise.`;
   }
   return { benchmark: spec, cells, leader, verdict };
 }
@@ -134,5 +142,5 @@ export function formatInterval(result: ModelResult, unit: BenchmarkDefinition["u
   if (result.low === null || result.high === null || !result.interval) return null;
   if (result.interval === "margin") return `± ${((result.high - result.low) / 2).toFixed(1)} points, as published`;
   const span = `${formatScore(result.low, unit)} to ${formatScore(result.high, unit)}`;
-  return result.interval === "ci95" ? `95% interval ${span}` : `Runs ranged ${span}`;
+  return result.interval === "ci90" ? `90% interval ${span}` : result.interval === "ci95" ? `95% interval ${span}` : `Runs ranged ${span}`;
 }

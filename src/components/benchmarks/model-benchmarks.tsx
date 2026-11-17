@@ -23,6 +23,7 @@ export async function ModelBenchmarks({ model }: { model: { id: string; name: st
       <section className="profile-benchmarks" aria-labelledby="benchmarks-heading">
         <h2 id="benchmarks-heading">Published benchmark results</h2>
         {tracked.benchmarks.unavailable ? <p role="status">Benchmark data is temporarily unavailable. This is a problem on our side, not a sign that no results exist.</p>
+          : tracked.benchmarks.rows.length === 0 ? <p role="status">Benchmark results have not been collected yet. They appear here after the next two-hourly refresh.</p>
           : rows.length === 0 ? <p>No published result for {model.name} on the benchmarks the tracker follows. New models are often evaluated days or weeks after launch.</p>
             : <dl>{rows.map((row) => {
               const cell = row.cells[0], spec = row.benchmark, primary = cell.primary;
@@ -35,6 +36,7 @@ export async function ModelBenchmarks({ model }: { model: { id: string; name: st
                     {primary && <p>Independent, run by {spec.evaluator}. {primary.url && <a href={primary.url}>Source<ArrowUpRight size={13} aria-hidden /></a>}</p>}
                     {cell.reported.map((result, i) => <p key={i}><span className="benchmark-tag">Reported by {result.by}</span> <strong>{formatScore(result.score, spec.unit)}</strong> · {result.settings}. {result.url && <a href={result.url}>{result.label}<ArrowUpRight size={13} aria-hidden /></a>}</p>)}
                     {spec.saturated && <p className="benchmark-caution">{spec.saturated}</p>}
+                    {spec.caution && <p className="benchmark-caution"><strong>Known problems.</strong> {spec.caution.text} <a href={spec.caution.url}>Read the review<ArrowUpRight size={13} aria-hidden /></a></p>}
                   </dd>
                 </div>
               );
