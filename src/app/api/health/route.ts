@@ -22,6 +22,7 @@ import { sql } from "drizzle-orm";
 import { tryGetDb } from "@/lib/db";
 import { frontierHealth } from "@/lib/frontier/health";
 import { SOURCE_REGISTRY } from "@/lib/sources/registry";
+import { LAST_GOOD_LOOKBACK_SECONDS, staleSources, type SourceState } from "@/lib/source-health";
 
 export const runtime = "nodejs";
 // Never cached: a stale "ok" masks an outage.
@@ -31,12 +32,6 @@ export const dynamic = "force-dynamic";
 const MAX_POLL_AGE_SECONDS = 3 * 60 * 60;
 /** A source erroring this long has stopped being a blip. */
 const MAX_SOURCE_ERROR_AGE_SECONDS = 6 * 60 * 60;
-
-interface SourceState extends Record<string, unknown> {
-  source: string;
-  status: string;
-  startedAt: string | Date;
-}
 
 export async function GET(): Promise<NextResponse> {
   const headers = { "Cache-Control": "no-store" };
@@ -66,8 +61,12 @@ export async function GET(): Promise<NextResponse> {
       SOURCE_REGISTRY.map((d) => sql`${d.key}`),
       sql`, `,
     );
+    //
+    // `lastGoodAt` is the newest run that read its source. It only looks back as
+    // far as the widest stale window, so each probe stays a short index range
+    // scan even for a source that has never succeeded.
     const latest = await db.execute<SourceState>(sql`
-      select s.key as source, r.status, r.started_at as "startedAt"
+      select s.key as source, r.status, r.started_at as "startedAt", g.started_at as "lastGoodAt"
       from unnest(array[${registryKeys}]::text[]) as s(key)
       cross join lateral (
         select status, started_at
@@ -76,6 +75,15 @@ export async function GET(): Promise<NextResponse> {
         order by started_at desc
         limit 1
       ) r
+      left join lateral (
+        select started_at
+        from poller_runs
+        where source = s.key
+          and status in ('ok', 'unchanged')
+          and started_at >= now() - make_interval(secs => ${LAST_GOOD_LOOKBACK_SECONDS})
+        order by started_at desc
+        limit 1
+      ) g on true
     `);
     const rows = (latest.rows ?? []) as unknown as SourceState[];
 
@@ -100,11 +108,11 @@ export async function GET(): Promise<NextResponse> {
       .filter((k) => !known.has(k))
       .sort();
 
-    const stale = SOURCE_REGISTRY.filter((d) => {
-      const row = rows.find((r) => r.source === d.key);
-      const cadence = { 1: 600, 2: 1800, 3: 7200 }[d.tier];
-      return row && now - new Date(row.startedAt).getTime() >= cadence * 3 * 1000;
-    }).map((d) => d.key);
+    // Stale means "has not READ its source for three scheduled runs". Counting
+    // any run as fresh hid `gemini_models` for two weeks: it ran on time, parsed
+    // nothing, and recorded "skipped". A source already listed as failing is
+    // not repeated here.
+    const stale = staleSources(rows, now).filter((key) => !failing.includes(key));
     const frontier = await frontierHealth(db).catch(() => ({ ok: false, providers: [], reason: "Frontier state unavailable" }));
     const reasons: string[] = [];
     if (!frontier.ok) reasons.push("frontier profiles need attention");

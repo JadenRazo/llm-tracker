@@ -22,7 +22,7 @@
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { tryGetDb, type Database } from "@/lib/db";
 import { events, models } from "@/lib/db/schema";
-import { fetchConditional } from "@/lib/poller/conditional-fetch";
+import { fetchConditional, loadPersistedCacheHeaders } from "@/lib/poller/conditional-fetch";
 import type { RunResult } from "@/lib/poller/runner";
 import type { Provider } from "@/lib/providers";
 import type { SourceDescriptor } from "@/lib/sources/registry";
@@ -35,8 +35,14 @@ const DETAIL_URL = (id: string) => `${DOCS_BASE}/${id}.md`;
 
 /** Detail fetches per run. ~96 models fill in over a few tier-3 ticks, then this is a no-op. */
 const MAX_DETAIL_FETCHES = 25;
-/** Below this the index markup has changed; fail soft rather than wiping the catalog. */
+/** Below this the index markup has changed. Nothing is wiped, and the run is an error. */
 const MIN_EXPECTED_MODELS = 20;
+/**
+ * Pages under /api/docs/models/ that are not models. "all" is the "all models"
+ * listing and "compare" the comparison tool; both are linked from the index in
+ * the same form as a model, and "all" was once ingested as a model named "all".
+ */
+const NON_MODEL_PAGES = new Set(["all", "compare"]);
 
 interface ParsedModel {
   id: string;
@@ -77,7 +83,7 @@ export function parseModelIndex(md: string): ParsedModel[] {
   while ((m = re.exec(md)) !== null) {
     const id = m[2]!.toLowerCase();
     const displayName = m[1]!.replace(/\s+/g, " ").trim();
-    if (!displayName || seen.has(id)) continue;
+    if (!displayName || seen.has(id) || NON_MODEL_PAGES.has(id)) continue;
     seen.set(id, displayName);
   }
   return [...seen].map(([id, displayName]) => ({ id, displayName }));
@@ -185,7 +191,10 @@ async function enrichUnfilled(db: Database, now: Date): Promise<number> {
 }
 
 export async function runOpenaiModels(): Promise<RunResult> {
-  const res = await fetchConditional(INDEX_URL, SOURCE_KEY);
+  // Validators from a RECORDED successful run only. The in-process cache would
+  // remember the ETag of a page that then failed to parse, and the next warm run
+  // would get a 304 and report "unchanged" over a catalog that never updated.
+  const res = await fetchConditional(INDEX_URL, SOURCE_KEY, { cacheHeaders: await loadPersistedCacheHeaders(SOURCE_KEY) });
   const now = new Date();
 
   if (res.unchanged) {
@@ -200,6 +209,8 @@ export async function runOpenaiModels(): Promise<RunResult> {
       lastModified: res.lastModified,
     };
   }
+  // An over-cap body arrives as "200 with no body"; say what happened.
+  if (res.oversized) throw new Error("the model index exceeded the response size cap; catalog left as it was");
   if (!res.body || res.status >= 400) {
     // eslint-disable-next-line no-console
     console.warn(`[${SOURCE_KEY}] models.md returned ${res.status} — skipping`);
@@ -211,13 +222,12 @@ export async function runOpenaiModels(): Promise<RunResult> {
   if (!db) return { inserted: 0, updated: 0, skipped: 1, status: "skipped" };
 
   if (parsed.length < MIN_EXPECTED_MODELS) {
-    // Fail soft: a docs restructure must not wipe or truncate the catalog.
-    // eslint-disable-next-line no-console
-    console.warn(
-      `[${SOURCE_KEY}] parsed only ${parsed.length} models from ${INDEX_URL} (< ${MIN_EXPECTED_MODELS}) — markup likely changed; skipping (no data wiped)`,
-    );
-    const toppedUp = await enrichUnfilled(db, now);
-    return { inserted: 0, updated: toppedUp, skipped: 1, status: "skipped", etag: res.etag, lastModified: res.lastModified };
+    // A docs restructure must not wipe or truncate the catalog, so nothing from
+    // the index is written (rows still waiting for their own detail page are
+    // topped up as usual). It is still a failed run: recording "skipped" let a
+    // redesign hide every new model indefinitely while health stayed green.
+    await enrichUnfilled(db, now);
+    throw new Error(`parsed only ${parsed.length} models from the index (expected at least ${MIN_EXPECTED_MODELS}); markup likely changed, catalog left as it was`);
   }
 
   const ids = parsed.map((m) => m.id);
@@ -235,8 +245,17 @@ export async function runOpenaiModels(): Promise<RunResult> {
   const newModels = parsed.filter((m) => !existing.has(m.id));
   const seenModels = parsed.filter((m) => existing.has(m.id));
 
+  // Remove what an earlier version ingested from the non-model links. Exact
+  // IDs, this provider only. Once production has run this (added 2026-11-17)
+  // it deletes nothing and can be removed.
+  const nonModels = [...NON_MODEL_PAGES];
+  await db.delete(models).where(and(eq(models.provider, PROVIDER), inArray(models.id, nonModels)));
+  await db.delete(events).where(and(eq(events.source, SOURCE_KEY), eq(events.type, "new_model"), inArray(events.externalId, nonModels)));
+
+  let foreign: string[] = [];
+  let added = newModels;
   if (newModels.length > 0) {
-    await db.insert(models).values(
+    const stored = await db.insert(models).values(
       newModels.map((m) => ({
         id: m.id,
         displayName: m.displayName,
@@ -249,12 +268,24 @@ export async function runOpenaiModels(): Promise<RunResult> {
         lastSeenAt: now,
         provider: PROVIDER,
       })),
-    );
+    // Two overlapping runs (a scheduled tick and a manual one) may both see a
+    // model as new; the second insert must not fail the whole run.
+    ).onConflictDoNothing({ target: models.id }).returning({ id: models.id });
+    // An ID that was not stored is either that race, or already belongs to
+    // another provider (models.id is one key across providers). The second must
+    // not pass quietly: it is a model this catalog can never show.
+    const storedIds = new Set(stored.map((r) => r.id));
+    const unstored = newModels.filter((m) => !storedIds.has(m.id)).map((m) => m.id);
+    if (unstored.length > 0) {
+      const owners = await db.select({ id: models.id, provider: models.provider }).from(models).where(inArray(models.id, unstored));
+      foreign = owners.filter((o) => o.provider !== PROVIDER).map((o) => o.id);
+      added = newModels.filter((m) => !foreign.includes(m.id));
+    }
 
-    await db
+    if (added.length > 0) await db
       .insert(events)
       .values(
-        newModels.map((m) => ({
+        added.map((m) => ({
           source: SOURCE_KEY,
           type: "new_model",
           externalId: m.id,
@@ -278,9 +309,10 @@ export async function runOpenaiModels(): Promise<RunResult> {
   }
 
   const enriched = await enrichUnfilled(db, now);
+  if (foreign.length > 0) throw new Error(`model ID already used by another provider, not stored: ${foreign.join(", ").slice(0, 200)}`);
 
   return {
-    inserted: newModels.length,
+    inserted: added.length,
     updated: seenModels.length + enriched,
     skipped: 0,
     status: "ok",

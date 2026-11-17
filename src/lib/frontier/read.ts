@@ -7,7 +7,8 @@ import { frontierFactsSchema, frontierProviders, type FrontierRevision, type Fro
 import { presentFrontier } from "./presentation";
 
 export interface FrontierData { current: FrontierModel[]; available: FrontierModel[]; unavailable: boolean; missingIds: string[] }
-export function requestedModelIds(raw = ""): string[] { return [...new Set(raw.split(",").filter((v) => /^(?:claude|gpt|gemini)-[a-z0-9.-]{1,90}$/.test(v)))].slice(0,3); }
+// Any catalog-shaped ID may be asked for; only IDs with an accepted revision resolve.
+export function requestedModelIds(raw = ""): string[] { return [...new Set(raw.split(",").filter((v) => /^[a-z0-9][a-z0-9._-]{1,99}$/.test(v)))].slice(0,3); }
 export async function readFrontier(raw = "", db: Database | null = tryGetDb()): Promise<FrontierData> {
   const ids = requestedModelIds(raw);
   const fallbacks = FRONTIER_MODELS.map((m) => ({ ...m, verifiedAt: `${FRONTIER_REVIEWED_AT}T00:00:00Z`, freshness: "fallback" as const, freshnessNote: "Automatic data is unavailable. Showing the dated bundled profile; check the official source for changes." }));

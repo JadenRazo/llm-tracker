@@ -60,6 +60,9 @@ jobs:
       - name: Release pagination and partial-failure regressions
         run: npm run test:releases
 
+      - name: Model discovery and silent-miss regressions
+        run: npm run test:catalog
+
       - name: Navigation, activity, and catalog regressions
         run: npm run test:ui
 

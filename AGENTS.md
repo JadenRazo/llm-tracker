@@ -15,9 +15,9 @@ show in sparse checkouts before declaring files missing.
 
 | Work | Read |
 | --- | --- |
-| Pages, navigation, models and feeds | src/app/, src/components/, src/lib/providers.ts, src/lib/provider-meta.ts, src/lib/model-catalog.ts |
+| Pages, navigation, models and feeds | src/app/, src/components/, src/lib/providers.ts, src/lib/provider-meta.ts, src/lib/model-catalog.ts, src/lib/model-directory.ts |
 | Source/ingestion behavior | src/lib/sources/registry.ts, provider adapters, src/lib/poller/ |
-| Empty, unavailable or stale states | src/lib/load-result.ts, src/lib/staleness.ts, src/app/api/health/route.ts |
+| Empty, unavailable or stale states | src/lib/load-result.ts, src/lib/staleness.ts, src/lib/source-health.ts, src/app/api/health/route.ts |
 | Curated content | content/tips/README.md, content/guides/README.md, src/lib/content.ts, src/lib/mdx-sanitize.ts |
 | Schema/query changes | src/lib/db/, src/lib/env.ts, drizzle.config.ts, scripts/read-coalescing.test.ts |
 | Runtime and release | src/instrumentation.ts, src/instrumentation-node.ts, next.config.ts, cache-handler.cjs, Dockerfile, .github/workflows/ |
@@ -43,6 +43,12 @@ and timestamps; ingestion time does not make old content new.
 - Keep pg/cron out of the Edge graph. Node instrumentation imports them only
   for Node runtime. The production web runtime disables cron; three external
   tiered poller Lambdas own scheduled ingestion. Do not duplicate scheduling.
+- The model-catalog sources (openai_models, gemini_models) record an error, not
+  "skipped", when their listing parses to nothing useful, and write nothing from
+  it. Other sources still return "skipped" on an unreadable upstream. Either way
+  health counts a source stale from its last ok/unchanged run, not its last run
+  of any kind, so a source that stops reading is reported. Every catalog model has a
+  page at /models/<id>; only the one verified pick per provider has a profile.
 - Health intentionally returns HTTP 200 on dependency degradation for runtime
   readiness; monitoring must inspect JSON ok, DB state and source/poller
   freshness. A warm homepage or db: up alone does not prove healthy ingestion.
@@ -61,11 +67,12 @@ DISABLE_CRON=1 npm run dev (port 3200) with isolated data. Select relevant check
 | --- | --- |
 | Types and lint | npm run typecheck; npm run lint |
 | Isolated read concurrency/failure regressions | npm run test:reads |
+| Model discovery and silent-miss regressions | npm run test:catalog |
 | Navigation/activity/catalog regressions | npm run test:ui |
 | Web build and dynamic-route guard | npm run build, then npm run check:prerender |
 | Poller bundle/load check | npm run build:poller |
 
-test:reads replaces the DB import with fixtures; test:ui bundles local tests.
+test:reads and test:catalog replace the DB import with fixtures; test:ui bundles local tests.
 There is no generic npm test script. Keep unavailable/empty and concurrency
 regressions meaningful. UI changes also need mobile/desktop, keyboard, popover,
 overflow, long-identifier and table checks. Builds use no production DB secrets.
