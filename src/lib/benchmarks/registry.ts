@@ -64,7 +64,7 @@ export const BENCHMARKS: readonly BenchmarkDefinition[] = [
     metric: "Index score", unit: "index", direction: "higher", evaluator: "Epoch AI",
     methodologyUrl: "https://epoch.ai/eci", sourceUrl: "https://epoch.ai/eci", feed: "epoch", default: true,
     rationale: "An independent composite with a published confidence interval, and the broadest coverage of current models.",
-    uncertainty: "Epoch AI publishes a 90% confidence interval from 500 bootstrap samples; it is shown as published.",
+    uncertainty: "Epoch AI publishes a confidence interval from 500 bootstrap samples (90% at the time of writing). It is shown as published, with its level.",
     effortApplies: false,
   },
   {
@@ -77,7 +77,7 @@ export const BENCHMARKS: readonly BenchmarkDefinition[] = [
   },
   {
     key: "frontierswe", name: "FrontierSWE", version: "v2 (September 2026)", capability: "Software engineering",
-    measures: "Long software engineering tasks (implementation, performance engineering, scientific computing, visual reasoning, AI research) with a 20-hour budget per task, every model at maximum reasoning effort.",
+    measures: "Long software engineering tasks (implementation, performance engineering, scientific computing, visual reasoning, AI research) with a 20-hour budget per task, each model at its own highest reasoning setting.",
     metric: "Mean score over 5 runs", unit: "percent", direction: "higher", evaluator: "FrontierSWE, mirrored by Epoch AI",
     methodologyUrl: `${EPOCH}/frontierswe`, sourceUrl: "https://www.frontierswe.com/", feed: "epoch", default: true,
     rationale: "Every model runs in the same harness, and the scores are spread widely enough to separate current models.",
@@ -90,7 +90,7 @@ export const BENCHMARKS: readonly BenchmarkDefinition[] = [
     metric: "Pass@1", unit: "percent", direction: "higher", evaluator: "Mercor, mirrored by Epoch AI",
     methodologyUrl: `${EPOCH}/apex-agents`, sourceUrl: `${EPOCH}/apex-agents`, feed: "epoch", default: true,
     rationale: "Long-horizon knowledge work rather than coding, with a published margin for each model.",
-    uncertainty: "The publisher shows a ± margin without defining it, so it is shown as published and not treated as a confidence interval.",
+    uncertainty: "The benchmark's leaderboard shows a ± figure without defining it (Epoch AI's mirror labels it a standard error). It is shown as published and not treated as a confidence interval.",
     effortApplies: true,
   },
   {

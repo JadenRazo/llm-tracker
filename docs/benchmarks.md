@@ -39,7 +39,7 @@ them, and publishes results as data the tracker can refresh without a key.
 
 | Capability | Benchmark | Run by | Why it is a default |
 | --- | --- | --- | --- |
-| General capability | Epoch Capabilities Index | Epoch AI | Independent composite with a 95% interval; broadest coverage |
+| General capability | Epoch Capabilities Index | Epoch AI | Independent composite with a published 90% interval; broadest coverage |
 | Reasoning on novel tasks | ARC-AGI-3 (semi-private) | ARC Prize Foundation | Held-back tasks, results per effort setting, far from its ceiling |
 | Software engineering | FrontierSWE v2 | FrontierSWE | One harness for every model; wide spread |
 | Agentic professional work | APEX-Agents | Mercor | Long non-coding tasks with a published ± margin |

@@ -35,8 +35,9 @@ export const REPORTED_SCORES: readonly ReportedScore[] = [
   })),
   // Table 4, "SEC-Bench Pro", vulnerability reproduction (pass@1).
   ...([["gpt-6.2-astra", 86.75], ["gpt-6.2-sol", 88.34], ["gpt-6-astra", 85.4], ["gpt-6.1-terra", 83.3], ["gpt-6.1-sol", 78.8]] as const).map(([modelId, score]) => ({
-    benchmark: "sec_bench_pro" as const, modelId, score, effort: modelId === "gpt-6.2-astra" || modelId === "gpt-6-astra" ? ("max" as const) : null,
-    settings: modelId === "gpt-6.2-astra" || modelId === "gpt-6-astra" ? "Maximum reasoning effort, per the card's text" : "Reasoning effort not stated for this model", ...GPT62_CARD,
+    // The card states the effort for GPT-6.2 Astra only.
+    benchmark: "sec_bench_pro" as const, modelId, score, effort: modelId === "gpt-6.2-astra" ? ("max" as const) : null,
+    settings: modelId === "gpt-6.2-astra" ? "Maximum reasoning effort, per the card's text" : "Reasoning effort not stated for this model", ...GPT62_CARD,
   })),
   // Table 5, "MLE-Bench Revised", mean reference percentile.
   ...([["gpt-6.2-astra", 96.06], ["gpt-6.2-sol", 91.38], ["gpt-6-astra", 93.8], ["gpt-6.1-terra", 86.5], ["gpt-5.6-sol", 87.18]] as const).map(([modelId, score]) => ({

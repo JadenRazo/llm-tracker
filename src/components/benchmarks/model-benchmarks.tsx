@@ -35,6 +35,7 @@ export async function ModelBenchmarks({ model }: { model: { id: string; name: st
                     {primary?.note && <p>{primary.note}</p>}
                     {primary && <p>Independent, run by {spec.evaluator}. {primary.url && <a href={primary.url}>Source<ArrowUpRight size={13} aria-hidden /></a>}</p>}
                     {cell.reported.map((result, i) => <p key={i}><span className="benchmark-tag">Reported by {result.by}</span> <strong>{formatScore(result.score, spec.unit)}</strong> · {result.settings}. {result.url && <a href={result.url}>{result.label}<ArrowUpRight size={13} aria-hidden /></a>}</p>)}
+                    {primary?.interval && spec.uncertainty && <p>{spec.uncertainty}</p>}
                     {spec.saturated && <p className="benchmark-caution">{spec.saturated}</p>}
                     {spec.caution && <p className="benchmark-caution"><strong>Known problems.</strong> {spec.caution.text} <a href={spec.caution.url}>Read the review<ArrowUpRight size={13} aria-hidden /></a></p>}
                   </dd>

@@ -118,6 +118,22 @@ test("ARC Prize rows keep harness, effort and coverage notes apart", () => {
   // The index's interval level comes from the archive, never from an assumption.
   const files = unzipFiles(archive, EPOCH_ARCHIVE_FILES);
   assert.match(files.get("epoch_capabilities_index/eci_bootstraps.json")!, /"ci_level": 0\.9/);
+  // An unknown or missing level drops the interval instead of guessing one or failing the whole feed.
+  const withLevel = (header: string) => {
+    const entries = [...files].map(([name, body]) => ({ name, body: Buffer.from(name.endsWith("eci_bootstraps.json") ? header : body) }));
+    const parts: Buffer[] = [], directory: Buffer[] = []; let offset = 0;
+    for (const e of entries) {
+      const local = Buffer.alloc(30 + Buffer.byteLength(e.name)); local.writeUInt32LE(0x04034b50, 0); local.writeUInt32LE(e.body.length, 18); local.writeUInt32LE(e.body.length, 22); local.writeUInt16LE(Buffer.byteLength(e.name), 26); local.write(e.name, 30);
+      const central = Buffer.alloc(46 + Buffer.byteLength(e.name)); central.writeUInt32LE(0x02014b50, 0); central.writeUInt32LE(crc32(e.body), 16); central.writeUInt32LE(e.body.length, 20); central.writeUInt32LE(e.body.length, 24); central.writeUInt16LE(Buffer.byteLength(e.name), 28); central.writeUInt32LE(offset, 42); central.write(e.name, 46);
+      parts.push(local, e.body); directory.push(central); offset += local.length + e.body.length;
+    }
+    const end = Buffer.alloc(22); end.writeUInt32LE(0x06054b50, 0); end.writeUInt16LE(entries.length, 8); end.writeUInt16LE(entries.length, 10); end.writeUInt32LE(Buffer.concat(directory).length, 12); end.writeUInt32LE(offset, 16);
+    return parseEpochArchive(Buffer.concat([...parts, ...directory, end])).filter((r) => r.benchmark === "eci");
+  };
+  assert.ok(withLevel('{"ci_level": 0.90}').every((r) => r.interval === "ci90" || r.interval === null));
+  assert.ok(withLevel('{"ci_level": 0.90}').some((r) => r.interval === "ci90"));
+  assert.ok(withLevel('{"ci_level": 0.95}').some((r) => r.interval === "ci95"));
+  for (const header of ['{"ci_level": 0.8}', '{"num_samples": 500}', "{}"]) assert.ok(withLevel(header).every((r) => r.interval === null && r.low === null && r.high === null), header);
   assert.throws(() => parseArcPrize(arcEvaluations.replaceAll('"score":0.7030', '"score":7.030'), arcModels), /out of range/);
 });
 

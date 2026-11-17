@@ -116,10 +116,11 @@ export function parseEpochArchive(archive: Uint8Array): BenchmarkRow[] {
   const eci = parseCsv(files.get(ECI_FILE)!);
   if (eci.length < 100) throw new Error(`${ECI_FILE} has only ${eci.length} rows`);
   // The scores file gives an interval without its level; the bootstrap file
-  // states it (0.9 when this was written). Read only the header of that file.
-  const level = files.get(ECI_BOOTSTRAPS)!.slice(0, 2000).match(/"ci_level"\s*:\s*(0\.\d+)/)?.[1];
-  const eciInterval: BenchmarkRow["interval"] = level === "0.9" ? "ci90" : level === "0.95" ? "ci95" : null;
-  if (level === undefined) throw new Error(`${ECI_BOOTSTRAPS} does not state the interval's confidence level`);
+  // states it (0.9 when this was written). A level this code does not know, or
+  // none at all, means the scores are shown without an interval: the index
+  // keeps refreshing and simply cannot name a leader.
+  const stated = Number(files.get(ECI_BOOTSTRAPS)!.match(/"ci_level"\s*:\s*([0-9.]+)/)?.[1]);
+  const eciInterval: BenchmarkRow["interval"] = Math.abs(stated - 0.9) < 1e-9 ? "ci90" : Math.abs(stated - 0.95) < 1e-9 ? "ci95" : null;
   for (const row of eci) {
     const organization = need(row, "Organization", ECI_FILE);
     if (!TRACKED_LABS.test(organization)) continue;
@@ -149,7 +150,7 @@ export function parseEpochArchive(archive: Uint8Array): BenchmarkRow[] {
         // this is one pass over `trials` questions. A larger one means more
         // variance than a simple proportion has, and ours would be too narrow.
         const binomial = Math.sqrt((fraction * (1 - fraction)) / spec.proportion.trials);
-        if (stderr !== null && stderr >= 0 && stderr <= binomial * 1.25 + 1e-9) {
+        if (stderr !== null && stderr >= 0 && stderr <= binomial * 1.05 + 1e-9) {
           const wilson = wilsonInterval(fraction, spec.proportion.trials);
           low = wilson.low; high = wilson.high; interval = "ci95";
         }

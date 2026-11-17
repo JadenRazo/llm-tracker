@@ -58,7 +58,7 @@ export default async function ComparePage({ searchParams }: { searchParams: Prom
         ) : (
           <>
             <p className="comparison-explainer">{selected.length === 1 ? `Published results for ${names}. Add another model to compare.` : `Published results for ${names}.`} Each score shows the benchmark version, the metric, who ran it and the settings used. A leader is named only when the results are like for like (same harness, same recorded effort) and their confidence intervals do not overlap. {refreshed && <>Sources last checked <time dateTime={refreshed}>{verificationLabel(refreshed)}</time>.</>}</p>
-            {degraded.length > 0 && <p role="status" className="frontier-source-note needs-review">Some results may be out of date: the latest refresh of {degraded.map((s) => (s.source === "benchmarks_epoch" ? "Epoch AI’s data" : "ARC Prize’s data")).join(" and ")} did not complete. Showing the last accepted results.</p>}
+            {degraded.length > 0 && <p role="status" className="frontier-source-note needs-review">Some results may be out of date: the latest refresh of {degraded.map((s) => (s.source === "benchmarks_epoch" ? "Epoch AI’s data" : "ARC Prize’s data")).join(" and ")} did not complete. {degraded.some((s) => s.rowCount > 0) ? "Showing the last accepted results." : "No results from it have been accepted yet."}</p>}
             <BenchmarkComparison models={selected} rows={table.defaults} caption={`Benchmark results for ${names}`} />
             {table.more.length > 0 && (
               <details className="benchmark-more">
