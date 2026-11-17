@@ -12,7 +12,8 @@ wide table or reading three disconnected model summaries.
 
 Three information structures were considered: a leaderboard, a task questionnaire,
 and model profiles with an optional task guide. A leaderboard implies comparable
-performance measurements we do not have. A questionnaire hides the models behind
+performance measurements we do not have. (Published benchmark results were added
+later as a sourced comparison, not a ranking; see [../benchmarks.md](../benchmarks.md).) A questionnaire hides the models behind
 extra steps. Profiles answer the user's primary request immediately and explain
 tradeoffs without inventing a universal winner. This preserves the established
 visual identity; it is not a new brand or an independently tested design trial.

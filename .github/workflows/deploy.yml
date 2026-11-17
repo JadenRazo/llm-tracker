@@ -166,6 +166,17 @@ jobs:
           [ "${ERROR}" = "None" ] || { cat "${OUT}"; exit 1; }
           node -e 'const r=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")); if(r.ok!==true || r.migration!=="frontier-v1") process.exit(1)' "${OUT}"
 
+      # One additive table for benchmark results. Idempotent; the benchmark
+      # sources skip until it exists, so order against the scheduler is safe.
+      - name: Apply additive benchmark schema
+        run: |
+          OUT=$(mktemp)
+          ERROR=$(aws lambda invoke --function-name raizcloud-claude-tracker-poller-t3 \
+            --cli-binary-format raw-in-base64-out --payload '{"frontierMaintenance":"migrate-v2"}' \
+            --query FunctionError --output text "${OUT}")
+          [ "${ERROR}" = "None" ] || { cat "${OUT}"; exit 1; }
+          node -e 'const r=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")); if(r.ok!==true || r.migration!=="benchmarks-v1") process.exit(1)' "${OUT}"
+
       # Run each tier once, synchronously. The new sources defer safely before schema setup; it proves the new
       # poller code actually executes in the VPC (a bundling mistake shows up
       # here, not silently 30 minutes later); it populates the rows the smoke
@@ -203,6 +214,19 @@ jobs:
             --query FunctionError --output text "${OUT}")
           [ "${ERROR}" = "None" ] || { cat "${OUT}"; exit 1; }
           node scripts/assert-frontier-status.mjs "${OUT}"
+
+      # Informational. Benchmark results come from third parties, so a feed that
+      # is down at deploy time must not block a release: the page then says the
+      # results are not collected yet or shows the last accepted ones.
+      - name: Report benchmark feed status
+        continue-on-error: true
+        run: |
+          OUT=$(mktemp)
+          aws lambda invoke --function-name raizcloud-claude-tracker-poller-t3 \
+            --cli-binary-format raw-in-base64-out --payload '{"frontierMaintenance":"benchmark-status"}' \
+            --query FunctionError --output text "${OUT}"
+          cat "${OUT}"; echo
+          node -e 'const r=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")); if(r.ok!==true) console.log("::warning::Benchmark feeds are not all current; see the status above.")' "${OUT}"
 
       - name: Update Lambda function code
         env:

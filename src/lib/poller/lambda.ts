@@ -20,6 +20,8 @@
 // EventBridge owns the cadence.
 
 import { migrateFrontier } from "@/lib/frontier/migration";
+import { migrateBenchmarks } from "@/lib/benchmarks/migration";
+import { benchmarkHealth } from "@/lib/benchmarks/read";
 import { frontierHealth } from "@/lib/frontier/health";
 import { restoreFrontier } from "@/lib/frontier/sync";
 import { frontierProviders, type FrontierProvider } from "@/lib/frontier/schema";
@@ -42,7 +44,7 @@ export const TIER_SOURCE_COUNTS: Record<number, number> = {
 };
 
 interface PollerEvent {
-  frontierMaintenance?: "migrate-v1" | "status" | "restore" | "resume";
+  frontierMaintenance?: "migrate-v1" | "migrate-v2" | "status" | "benchmark-status" | "restore" | "resume";
   provider?: FrontierProvider;
   revisionId?: string;
   /** Optional override, mainly for a manual `aws lambda invoke` smoke test. */
@@ -82,6 +84,9 @@ export async function handler(event?: PollerEvent) {
   if (event?.frontierMaintenance) {
     if (event.sourceKey || event.tier) throw new Error("Maintenance cannot be combined with polling");
     if (event.frontierMaintenance === "migrate-v1") return migrateFrontier();
+    // Additive: the benchmark snapshot table. Named after the op, not the table.
+    if (event.frontierMaintenance === "migrate-v2") return migrateBenchmarks();
+    if (event.frontierMaintenance === "benchmark-status") return benchmarkHealth(getDb());
     if (event.frontierMaintenance === "status") return frontierHealth(getDb());
     if (!event.provider || !frontierProviders.includes(event.provider)) throw new Error("Invalid recovery provider");
     if (event.frontierMaintenance === "restore") return restoreFrontier(event.provider, event.revisionId ?? "");

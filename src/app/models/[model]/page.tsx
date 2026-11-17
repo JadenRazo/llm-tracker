@@ -3,11 +3,12 @@ import { cache } from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowRight, ArrowUpRight } from "lucide-react";
-import { comparisonHref, modelPrice } from "@/lib/frontier-models";
+import { modelPrice } from "@/lib/frontier-models";
 import { getFrontierData } from "@/lib/frontier/read";
 import { verificationLabel } from "@/lib/frontier/presentation";
 import { getProviderMeta, getProviderStyle } from "@/lib/provider-meta";
 import { FrontierSourceNote } from "@/components/frontier/source-note";
+import { ModelBenchmarks } from "@/components/benchmarks/model-benchmarks";
 import { LABS, catalogPrice, officialModelPage, readCatalogModel, type CatalogModel } from "@/lib/model-directory";
 import { capabilityLabel, formatContext, formatTrackedDate, trueCapabilities } from "@/lib/model-catalog";
 
@@ -52,6 +53,7 @@ function CatalogProfile({ model, pick }: { model: CatalogModel; pick: { id: stri
     <header className="frontier-intro"><p className="frontier-lab"><span className="provider-dot" aria-hidden />{lab} · Tracked model</p><h1>{model.displayName}</h1><p>Listed in {lab}’s API documentation{tracked ? ` and tracked here since ${tracked}` : ""}. It is in the catalog; it is not the tracker’s verified pick for {provider}.</p></header>
     <div className="profile-grid"><section><p className="intro-kicker">What this page shows</p><h2>Catalog facts, recorded once.</h2><p>The tracker reads each provider’s model list every two hours and records a model’s limits and capabilities when it first appears. These facts are not re-verified afterwards, so check the official page before relying on them.</p>{pick && pick.id !== model.id && <p>For a profile that is re-verified against official sources every two hours, see <Link href={`/models/${pick.id}`}>{pick.name}</Link>, the current {provider} pick.</p>}</section><section className="profile-specs"><h2>At a glance</h2><dl>{specs.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl></section></div>
     {input && output && <section className="profile-pricing"><div><p className="intro-kicker">Standard API pricing, as first recorded</p><h2>${input} input <span>/ ${output} output</span></h2><p>USD per million tokens{tracked ? ` · Recorded ${tracked}` : ""}</p></div><p>Recorded from the provider’s model page when this model was first tracked. Later price changes are not picked up here. Caching, batch and other service tiers have separate rates.</p></section>}
+    <ModelBenchmarks model={{ id: model.id, name: model.displayName, provider: model.provider }} />
     <section className="profile-sources"><h2>Check the evidence</h2><p>The official page is the authority for current limits and prices.</p><div><a href={official.url}>{official.label}<ArrowUpRight size={15} aria-hidden /></a><Link href={`/${model.provider}/models`}>Browse the tracked {provider} catalog <ArrowRight size={15} aria-hidden /></Link></div></section>
   </article>;
 }
@@ -71,10 +73,10 @@ export default async function ModelProfile({ params }: Props) {
   const price = modelPrice(model, asOf);
   return <article className="frontier-page provider-scope" style={getProviderStyle(model.provider)}>
     <Link href="/" className="frontier-back">← All frontier models</Link>
-    <header className="frontier-intro"><p className="frontier-lab"><span className="provider-dot" aria-hidden />{model.lab} · Frontier profile</p><h1>{model.name}</h1><p>{model.summary}</p><Link href="/compare" className="frontier-button">Compare all three <ArrowRight size={18} aria-hidden /></Link></header>
-    <div className="profile-grid"><section><p className="intro-kicker">Consider it for</p><h2>{model.focus}</h2><p>{model.why}</p><h3>The tradeoff</h3><p>{model.tradeoff}</p><p className="profile-editorial">Task guidance follows the documented capabilities. It is not an independent benchmark result.</p></section><section className="profile-specs"><h2>At a glance</h2><dl>{[["Inputs", model.inputs], ["Context budget", model.context], ["Maximum output", model.output], ["Reasoning", model.reasoning], ["API access", model.access]].map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl></section></div>
+    <header className="frontier-intro"><p className="frontier-lab"><span className="provider-dot" aria-hidden />{model.lab} · Frontier profile</p><h1>{model.name}</h1><p>{model.summary}</p><Link href="/compare" className="frontier-button">Compare the picks from each lab <ArrowRight size={18} aria-hidden /></Link></header>
+    <div className="profile-grid"><section><p className="intro-kicker">Consider it for</p><h2>{model.focus}</h2><p>{model.why}</p><h3>The tradeoff</h3><p>{model.tradeoff}</p><p className="profile-editorial">This guidance follows the documented capabilities, not test results. Independent benchmark results are listed below.</p></section><section className="profile-specs"><h2>At a glance</h2><dl>{[["Inputs", model.inputs], ["Context budget", model.context], ["Maximum output", model.output], ["Reasoning", model.reasoning], ["API access", model.access]].map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl></section></div>
     <section className="profile-pricing"><div><p className="intro-kicker">Standard API pricing</p><h2>${price.input} input <span>/ ${price.output} output</span></h2><p>USD per million tokens · Sources checked {verificationLabel(model.verifiedAt)}</p></div><p>{model.price.note} Rates follow the published schedule. Chat subscription prices are separate.</p></section>
-    <section className="profile-compare"><h2>How does it compare?</h2><div>{data.current.filter((other) => other.id !== model.id).map((other) => <Link key={other.id} href={comparisonHref([model.id, other.id], data.available)}><span>{model.name}<small>vs</small>{other.name}</span><ArrowRight size={20} aria-hidden /></Link>)}</div></section>
+    <ModelBenchmarks model={{ id: model.id, name: model.name, provider: model.provider }} />
     <section className="profile-sources"><h2>Check the evidence</h2><p>Provider documentation, verified {verificationLabel(model.verifiedAt)}.</p><div>{model.sources.map((source) => <a key={source.url} href={source.url}>{source.label}<ArrowUpRight size={15} aria-hidden /></a>)}<Link href={`/${model.provider}/models`}>Browse the tracked {getProviderMeta(model.provider).label} catalog <ArrowRight size={15} aria-hidden /></Link></div></section>
     <FrontierSourceNote models={[model]} />
   </article>;

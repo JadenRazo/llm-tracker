@@ -22,6 +22,8 @@ The separate broad provider catalogs still use their original ingestion adapters
 Do not use those incomplete scalar catalog records as comparison evidence.
 Task guidance derives from the accepted profile and current applicable price;
 benchmark or latency superiority is not inferred from specifications.
+Published benchmark results are a separate layer with their own sources and
+rules; see [docs/benchmarks.md](../docs/benchmarks.md).
 
 To repair an adapter, capture the current official documents, reproduce the
 failure in `scripts/fixtures/frontier/`, update a narrow parser rule and its

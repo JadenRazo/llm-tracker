@@ -31,6 +31,9 @@ export type SourceKey =
   | "frontier_claude"
   | "frontier_openai"
   | "frontier_gemini"
+  // ---- Benchmark results (all providers; never prefix these "frontier_") ----
+  | "benchmarks_epoch"
+  | "benchmarks_arcprize"
   | "github_releases_claude_code"
   | "github_releases_sdk_python"
   | "github_releases_sdk_typescript"
@@ -60,8 +63,9 @@ export type SourceKey =
 export interface SourceDescriptor {
   /** Persisted source key — stored verbatim in poller_runs.source / events.source. */
   key: SourceKey;
-  /** Owning LLM provider — stamped onto rows this source writes. */
-  provider: Provider;
+  /** Owning LLM provider — stamped onto rows this source writes. Absent for a
+   *  source that covers every provider, such as a benchmark feed. */
+  provider?: Provider;
   /** Scheduling tier. */
   tier: SourceTier;
   /** The scraping/poll function. Must not throw for non-errors (see RunResult). */
@@ -97,6 +101,7 @@ import { openaiCodexReleasesSource } from "@/lib/sources/openai/openai_codex_rel
 import { openaiNewsSource } from "@/lib/sources/openai/openai_news";
 import { openaiStatusSource } from "@/lib/sources/openai/openai_status";
 import { syncFrontier } from "@/lib/frontier/sync";
+import { syncBenchmarks } from "@/lib/benchmarks/sync";
 
 /**
  * The canonical source list. Order within a tier preserves the pre-refactor
@@ -138,6 +143,10 @@ export const SOURCE_REGISTRY: readonly SourceDescriptor[] = [
   { key: "frontier_claude", provider: "claude", tier: 3, run: () => syncFrontier("claude") },
   { key: "frontier_openai", provider: "openai", tier: 3, run: () => syncFrontier("openai") },
   { key: "frontier_gemini", provider: "gemini", tier: 3, run: () => syncFrontier("gemini") },
+  // Benchmark feeds. The deploy gate counts keys starting "frontier_" and
+  // requires exactly three, so these are deliberately named otherwise.
+  { key: "benchmarks_epoch", tier: 3, run: () => syncBenchmarks("benchmarks_epoch") },
+  { key: "benchmarks_arcprize", tier: 3, run: () => syncBenchmarks("benchmarks_arcprize") },
 ] as const;
 
 const REGISTRY_BY_KEY: ReadonlyMap<string, SourceDescriptor> = new Map(

@@ -52,6 +52,8 @@ export const SOURCES: Record<SourceKey, SourceMeta> = {
   frontier_claude: { label: "models", longLabel: "Claude frontier profile", icon: Boxes, cssVar: "--color-src-models", tintClass: "src-models" },
   frontier_openai: { label: "models", longLabel: "OpenAI frontier profile", icon: Boxes, cssVar: "--color-src-models", tintClass: "src-models" },
   frontier_gemini: { label: "models", longLabel: "Gemini frontier profile", icon: Boxes, cssVar: "--color-src-models", tintClass: "src-models" },
+  benchmarks_epoch: { label: "benchmarks", longLabel: "Epoch AI benchmark data", icon: Boxes, cssVar: "--color-src-models", tintClass: "src-models" },
+  benchmarks_arcprize: { label: "benchmarks", longLabel: "ARC Prize leaderboard data", icon: Boxes, cssVar: "--color-src-models", tintClass: "src-models" },
   npm_claude_code: {
     label: "npm",
     longLabel: "npm @anthropic-ai/claude-code",

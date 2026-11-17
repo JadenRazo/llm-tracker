@@ -71,6 +71,11 @@ jobs:
         env:
           FRONTIER_TEST_DATABASE_URL: postgresql://frontier_test:frontier_test@127.0.0.1:5432/frontier_test
 
+      - name: Benchmark feeds, model matching and comparison rules
+        run: npm run test:benchmarks
+        env:
+          FRONTIER_TEST_DATABASE_URL: postgresql://frontier_test:frontier_test@127.0.0.1:5432/frontier_test
+
       # No DATABASE_URL on purpose — the build must not need VPC access to the
       # production database. That is exactly why the next step exists: with no
       # DATABASE_URL, anything prerendered here is prerendered EMPTY.
