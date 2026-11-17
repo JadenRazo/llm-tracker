@@ -1697,7 +1697,7 @@ input[type="checkbox"] {
   color: var(--color-text-muted);
 }
 /* A catalog row's name opens that model's page. */
-.model-name-link { text-decoration: underline; text-decoration-color: var(--color-border); text-underline-offset: 3px; }
+.model-name-link { display: inline-flex; align-items: center; min-height: 44px; text-decoration: underline; text-decoration-color: var(--color-border); text-underline-offset: 3px; }
 .model-name-link:hover { text-decoration-color: currentColor; }
 
 .model-id {

@@ -225,6 +225,8 @@ export async function runGeminiModels(): Promise<RunResult> {
       lastModified: res.lastModified,
     };
   }
+  // An over-cap body arrives as "200 with no body"; say what happened.
+  if (res.oversized) throw new Error("the model lineup exceeded the response size cap; catalog left as it was");
   if (!res.body || res.status >= 400) {
     // eslint-disable-next-line no-console
     console.warn(`[${SOURCE_KEY}] models page returned ${res.status} — skipping`);
@@ -263,8 +265,10 @@ export async function runGeminiModels(): Promise<RunResult> {
   let inserted = 0;
   let updated = 0;
 
+  let foreign: string[] = [];
+  let added = newModels;
   if (newModels.length > 0) {
-    await db.insert(models).values(
+    const stored = await db.insert(models).values(
       newModels.map((m) => ({
         id: m.id,
         displayName: m.displayName,
@@ -277,13 +281,22 @@ export async function runGeminiModels(): Promise<RunResult> {
         lastSeenAt: now,
         provider: PROVIDER,
       })),
-    ).onConflictDoNothing({ target: models.id });
-    inserted = newModels.length;
+    ).onConflictDoNothing({ target: models.id }).returning({ id: models.id });
+    // Not stored means an overlapping run got there first, or the ID already
+    // belongs to another provider. The second is reported, not swallowed.
+    const storedIds = new Set(stored.map((r) => r.id));
+    const unstored = newModels.filter((m) => !storedIds.has(m.id)).map((m) => m.id);
+    if (unstored.length > 0) {
+      const owners = await db.select({ id: models.id, provider: models.provider }).from(models).where(inArray(models.id, unstored));
+      foreign = owners.filter((o) => o.provider !== PROVIDER).map((o) => o.id);
+      added = newModels.filter((m) => !foreign.includes(m.id));
+    }
+    inserted = added.length;
 
-    await db
+    if (added.length > 0) await db
       .insert(events)
       .values(
-        newModels.map((m) => ({
+        added.map((m) => ({
           source: SOURCE_KEY,
           type: "new_model",
           externalId: m.id,
@@ -311,6 +324,7 @@ export async function runGeminiModels(): Promise<RunResult> {
   }
 
   const enriched = await enrichMissingLimits(db, now);
+  if (foreign.length > 0) throw new Error(`model ID already used by another provider, not stored: ${foreign.join(", ").slice(0, 200)}`);
 
   return {
     inserted,

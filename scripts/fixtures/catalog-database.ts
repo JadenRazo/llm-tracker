@@ -2,10 +2,13 @@
 // builder chain is awaitable; selects answer from a queue so a test can script
 // "existing model ids" and "rows still needing enrichment" in order.
 export const state = {
+  /** Model IDs the database "already holds", so an insert does not store them. */
+  held: new Set<string>(),
   selects: [] as unknown[][],
   operations: [] as { kind: "insert" | "update" | "delete"; values?: unknown }[],
 };
-export function resetDatabase(selects: unknown[][] = []) {
+export function resetDatabase(selects: unknown[][] = [], held: string[] = []) {
+  state.held = new Set(held);
   state.selects = selects;
   state.operations = [];
 }
@@ -23,7 +26,12 @@ export function tryGetDb() {
   return {
     // Validator lookups (poller_runs) and model lookups share the queue; an empty queue answers [].
     select: () => chain(() => state.selects.shift() ?? []),
-    insert: () => ({ values: (values: unknown) => { state.operations.push({ kind: "insert", values }); return chain(() => []); } }),
+    // Awaiting an insert answers like `.returning({ id })`: the rows that were stored.
+    insert: () => ({ values: (values: unknown) => {
+      state.operations.push({ kind: "insert", values });
+      const rows = (Array.isArray(values) ? values : [values]) as { id?: string }[];
+      return chain(() => rows.filter((row) => typeof row.id === "string" && !state.held.has(row.id)).map((row) => ({ id: row.id })));
+    } }),
     update: () => { state.operations.push({ kind: "update" }); return chain(() => []); },
     delete: () => { state.operations.push({ kind: "delete" }); return chain(() => []); },
   };

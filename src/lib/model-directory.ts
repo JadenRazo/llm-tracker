@@ -39,6 +39,8 @@ export async function readCatalogModel(id: string, db: Database | null = tryGetD
   if (!db) return { model: null, unavailable: true };
   try {
     const [row] = await db.select().from(models).where(eq(models.id, id)).limit(1);
+    // Every adapter stamps one of the three providers. A row with any other
+    // value has no page here; it is treated as absent rather than guessed at.
     if (!row || !isProvider(row.provider)) return { model: null, unavailable: false };
     return { model: { ...row, provider: row.provider }, unavailable: false };
   } catch {

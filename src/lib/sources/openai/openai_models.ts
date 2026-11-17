@@ -209,6 +209,8 @@ export async function runOpenaiModels(): Promise<RunResult> {
       lastModified: res.lastModified,
     };
   }
+  // An over-cap body arrives as "200 with no body"; say what happened.
+  if (res.oversized) throw new Error("the model index exceeded the response size cap; catalog left as it was");
   if (!res.body || res.status >= 400) {
     // eslint-disable-next-line no-console
     console.warn(`[${SOURCE_KEY}] models.md returned ${res.status} — skipping`);
@@ -220,9 +222,10 @@ export async function runOpenaiModels(): Promise<RunResult> {
   if (!db) return { inserted: 0, updated: 0, skipped: 1, status: "skipped" };
 
   if (parsed.length < MIN_EXPECTED_MODELS) {
-    // A docs restructure must not wipe or truncate the catalog, so nothing is
-    // written. It is still a failed run: recording "skipped" let a redesign hide
-    // every new model indefinitely while health stayed green.
+    // A docs restructure must not wipe or truncate the catalog, so nothing from
+    // the index is written (rows still waiting for their own detail page are
+    // topped up as usual). It is still a failed run: recording "skipped" let a
+    // redesign hide every new model indefinitely while health stayed green.
     await enrichUnfilled(db, now);
     throw new Error(`parsed only ${parsed.length} models from the index (expected at least ${MIN_EXPECTED_MODELS}); markup likely changed, catalog left as it was`);
   }
@@ -242,13 +245,17 @@ export async function runOpenaiModels(): Promise<RunResult> {
   const newModels = parsed.filter((m) => !existing.has(m.id));
   const seenModels = parsed.filter((m) => existing.has(m.id));
 
-  // Remove what an earlier version ingested from the non-model links.
+  // Remove what an earlier version ingested from the non-model links. Exact
+  // IDs, this provider only. Once production has run this (added 2026-11-17)
+  // it deletes nothing and can be removed.
   const nonModels = [...NON_MODEL_PAGES];
   await db.delete(models).where(and(eq(models.provider, PROVIDER), inArray(models.id, nonModels)));
   await db.delete(events).where(and(eq(events.source, SOURCE_KEY), eq(events.type, "new_model"), inArray(events.externalId, nonModels)));
 
+  let foreign: string[] = [];
+  let added = newModels;
   if (newModels.length > 0) {
-    await db.insert(models).values(
+    const stored = await db.insert(models).values(
       newModels.map((m) => ({
         id: m.id,
         displayName: m.displayName,
@@ -263,12 +270,22 @@ export async function runOpenaiModels(): Promise<RunResult> {
       })),
     // Two overlapping runs (a scheduled tick and a manual one) may both see a
     // model as new; the second insert must not fail the whole run.
-    ).onConflictDoNothing({ target: models.id });
+    ).onConflictDoNothing({ target: models.id }).returning({ id: models.id });
+    // An ID that was not stored is either that race, or already belongs to
+    // another provider (models.id is one key across providers). The second must
+    // not pass quietly: it is a model this catalog can never show.
+    const storedIds = new Set(stored.map((r) => r.id));
+    const unstored = newModels.filter((m) => !storedIds.has(m.id)).map((m) => m.id);
+    if (unstored.length > 0) {
+      const owners = await db.select({ id: models.id, provider: models.provider }).from(models).where(inArray(models.id, unstored));
+      foreign = owners.filter((o) => o.provider !== PROVIDER).map((o) => o.id);
+      added = newModels.filter((m) => !foreign.includes(m.id));
+    }
 
-    await db
+    if (added.length > 0) await db
       .insert(events)
       .values(
-        newModels.map((m) => ({
+        added.map((m) => ({
           source: SOURCE_KEY,
           type: "new_model",
           externalId: m.id,
@@ -292,9 +309,10 @@ export async function runOpenaiModels(): Promise<RunResult> {
   }
 
   const enriched = await enrichUnfilled(db, now);
+  if (foreign.length > 0) throw new Error(`model ID already used by another provider, not stored: ${foreign.join(", ").slice(0, 200)}`);
 
   return {
-    inserted: newModels.length,
+    inserted: added.length,
     updated: seenModels.length + enriched,
     skipped: 0,
     status: "ok",

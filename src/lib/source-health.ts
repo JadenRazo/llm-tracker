@@ -28,6 +28,7 @@ export function staleSources(rows: readonly SourceState[], now: number, registry
     const row = rows.find((r) => r.source === d.key);
     if (!row) return false;
     const lastGood = row.lastGoodAt ? new Date(row.lastGoodAt).getTime() : null;
-    return lastGood === null || now - lastGood >= TIER_CADENCE_SECONDS[d.tier] * STALE_AFTER_RUNS * 1000;
+    // An unreadable timestamp is not evidence of a successful read.
+    return lastGood === null || !Number.isFinite(lastGood) || now - lastGood >= TIER_CADENCE_SECONDS[d.tier] * STALE_AFTER_RUNS * 1000;
   }).map((d) => d.key).sort();
 }

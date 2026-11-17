@@ -44,7 +44,7 @@ test("the GPT-6.2 launch index yields Astra and Sol as two models, and no listin
   assert.deepEqual([astra.contextWindow, sol.contextWindow, astra.maxOutput], [1050000, 1050000, 128000]);
 });
 
-test("openai_models stores both launch models, removes the bogus listing row, and tolerates a repeat insert", async () => {
+test("openai_models stores both launch models and removes the bogus listing row", async () => {
   resetDatabase([[], [], []]); // no recorded validators, no existing models, nothing left to enrich
   serve(OPENAI_INDEX, openaiIndex);
   const result = await runOpenaiModels();
@@ -60,7 +60,7 @@ test("openai_models stores both launch models, removes the bogus listing row, an
   assert.equal(result.inserted, modelRows.length);
 });
 
-test("a page that parses to too few models is a failed run that writes nothing", async () => {
+test("a page that parses to too few models is a failed run that writes nothing from the listing", async () => {
   resetDatabase();
   serve(OPENAI_INDEX, "# Models\n\n[GPT-9](/api/docs/models/gpt-9.md)\n");
   await assert.rejects(runOpenaiModels(), /parsed only 1 models/);
@@ -70,9 +70,46 @@ test("a page that parses to too few models is a failed run that writes nothing",
   serve(GEMINI_INDEX, "<!doctype html><title>Google AI Studio</title>"); // what the moved docs answered
   await assert.rejects(runGeminiModels(), /parsed 0 model cards/);
   assert.deepEqual(state.operations, []);
+
+  // Rows already held and still waiting for their own detail page are topped up
+  // as usual; that is the only write a failed listing may be followed by.
+  resetDatabase([[], [{ id: "gpt-6.2-sol" }]]); // no recorded validators; one row needs enrichment
+  globalThis.fetch = (async (input: RequestInfo | URL) => String(input) === OPENAI_INDEX ? new Response("# Models\n") : String(input).endsWith("/gpt-6.2-sol.md") ? new Response(launch[3].body) : new Response("missing", { status: 404 })) as typeof fetch;
+  await assert.rejects(runOpenaiModels(), /parsed only 0 models/);
+  assert.deepEqual((state.operations as { kind: string }[]).map((o) => o.kind), ["update"]); // no insert, no delete
+});
+
+test("a size-capped listing is reported as that, not as a status code", async () => {
+  resetDatabase();
+  globalThis.fetch = (async () => new Response("x", { headers: { "content-length": String(11 * 1024 * 1024) } })) as typeof fetch;
+  await assert.rejects(runOpenaiModels(), /size cap/);
+  await assert.rejects(runGeminiModels(), /size cap/);
+  assert.deepEqual(state.operations, []);
+});
+
+test("an ID another provider already holds is reported, not silently dropped", async () => {
+  // models.id is one key across providers. The insert skips the row; the run must say so.
+  resetDatabase([[], [], [{ id: "gpt-6.2-sol", provider: "gemini" }], []], ["gpt-6.2-sol"]);
+  serve(OPENAI_INDEX, openaiIndex);
+  await assert.rejects(runOpenaiModels(), /already used by another provider, not stored: gpt-6\.2-sol/);
+  const announced = inserted().filter((r) => r.externalId !== undefined).map((r) => r.externalId);
+  assert.ok(announced.includes("gpt-6.2-astra") && !announced.includes("gpt-6.2-sol")); // no "new model" event for a row that does not exist
+
+  // The same skip caused by an overlapping run of this provider is not an error.
+  resetDatabase([[], [], [{ id: "gpt-6.2-sol", provider: "openai" }], []], ["gpt-6.2-sol"]);
+  serve(OPENAI_INDEX, openaiIndex);
+  assert.equal((await runOpenaiModels()).status, "ok");
 });
 
 test("a failed parse is not remembered as the current version of the page", async () => {
+  // OpenAI's docs host is the one that sends validators today.
+  resetDatabase();
+  const openaiRequests = serve(OPENAI_INDEX, "# Models\n\n[GPT-9](/api/docs/models/gpt-9.md)\n", '"v2"');
+  await assert.rejects(runOpenaiModels());
+  await assert.rejects(runOpenaiModels());
+  assert.equal(openaiRequests.filter((r) => r.url === OPENAI_INDEX).length, 2);
+  for (const request of openaiRequests) assert.equal(request.headers.get("if-none-match"), null);
+
   resetDatabase();
   const requests = serve(GEMINI_INDEX, "<html>redesigned</html>", '"v2"');
   await assert.rejects(runGeminiModels());
@@ -98,6 +135,7 @@ test("stale means no successful read for three scheduled runs, whatever ran sinc
     { source: "t2_late", status: "ok", startedAt: ago(91), lastGoodAt: ago(91) },
   ];
   assert.deepEqual(staleSources(rows, now, registry), ["t2_late", "t3_skipping"]); // never-run sources are reported separately
+  assert.deepEqual(staleSources([{ source: "t1", status: "ok", startedAt: ago(1), lastGoodAt: "not-a-date" }], now, registry), ["t1"]); // unreadable is not fresh
 });
 
 test("every catalog-shaped model path reaches the app; malformed ones hard-404", () => {

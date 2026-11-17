@@ -43,9 +43,11 @@ and timestamps; ingestion time does not make old content new.
 - Keep pg/cron out of the Edge graph. Node instrumentation imports them only
   for Node runtime. The production web runtime disables cron; three external
   tiered poller Lambdas own scheduled ingestion. Do not duplicate scheduling.
-- A source that reads its upstream but parses nothing useful records an error,
-  never "skipped", and writes nothing. Health counts a source stale from its
-  last ok/unchanged run, not its last run of any kind. Every catalog model has a
+- The model-catalog sources (openai_models, gemini_models) record an error, not
+  "skipped", when their listing parses to nothing useful, and write nothing from
+  it. Other sources still return "skipped" on an unreadable upstream. Either way
+  health counts a source stale from its last ok/unchanged run, not its last run
+  of any kind, so a source that stops reading is reported. Every catalog model has a
   page at /models/<id>; only the one verified pick per provider has a profile.
 - Health intentionally returns HTTP 200 on dependency degradation for runtime
   readiness; monitoring must inspect JSON ok, DB state and source/poller
