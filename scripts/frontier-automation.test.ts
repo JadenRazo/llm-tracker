@@ -18,6 +18,7 @@ import { frontierHealth } from "@/lib/frontier/health";
 import { presentFrontier, taskGuidance } from "@/lib/frontier/presentation";
 import { comparisonHref, comparisonSelection, modelPrice } from "@/lib/frontier-models";
 import { isUnknownPath } from "@/middleware";
+import { parseModelCards, parseModelDetail } from "@/lib/sources/gemini/gemini_models";
 
 const fixture = JSON.parse(readFileSync("scripts/fixtures/frontier/documents.json", "utf8")).providers as Record<FrontierProvider, {url: string; body: string}[]>;
 const docs = (provider: FrontierProvider): SourceDocument[] => fixture[provider].map((d) => ({ ...d, hash: documentHash(d.body) }));
@@ -32,11 +33,14 @@ function fixtureFetch(documents = frontierProviders.flatMap(docs)): typeof fetch
 
 test("official excerpts produce three profiles with fair PDFs and scoped pricing", () => {
   const claude = parse("claude"), openai = parse("openai"), gemini = parse("gemini");
-  assert.equal(claude.id, "claude-fable-5-1"); assert.equal(openai.id, "gpt-6-astra"); assert.equal(gemini.id, "gemini-4-argon");
+  assert.equal(claude.id, "claude-fable-5-1"); assert.equal(openai.id, "gpt-6-astra"); assert.equal(gemini.id, "gemini-4-carbon");
   for (const facts of [claude, openai, gemini]) assert.ok(facts.inputs.includes("pdf"));
   assert.deepEqual(claude.reasoning.levels, ["low", "medium", "high", "xhigh", "max"]);
   assert.equal(openai.pricing.longContext?.above, 272000); assert.equal(openai.context.maxInput, 922000);
   assert.equal(gemini.context.kind, "shared"); assert.equal(gemini.output.tokens, 65536); assert.equal(gemini.output.extended, 1048576);
+  assert.deepEqual(gemini.inputs, ["text", "image", "video", "audio", "pdf"]); assert.deepEqual(gemini.reasoning.levels, ["low", "medium", "high"]);
+  assert.equal(gemini.selectionRule, "gemini-stable-reasoning"); // the stored shape must stay readable by the web build already deployed
+  assert.deepEqual(gemini.sources.map((s) => s.url), ["https://aistudio.google.com/docs/models", "https://aistudio.google.com/docs/models/gemini-4-carbon", "https://aistudio.google.com/docs/pricing"]);
   assert.deepEqual(gemini.pricing.changes, [{ effectiveAt: "2026-12-01", input: 4, output: 20 }]);
   for (const facts of [claude, openai, gemini]) assert.ok(facts.sources.every((s) => s.fields.length && /^[a-f0-9]{64}$/.test(s.hash)));
 });
@@ -48,10 +52,16 @@ test("selection follows positioning, handles a replacement, and rejects ambiguit
   assert.throws(() => selectCandidate("openai", source.replace('## Featured models', '[GPT-7 New](/api/docs/models/gpt-7-new), our flagship model for complex reasoning and coding\n## Featured models')), /found 2/);
   assert.throws(() => selectCandidate("openai", source.replaceAll("gpt-6-astra", "gpt-7-preview")), /stable/);
   assert.equal(selectCandidate("claude", docs("claude")[0].body).id, "claude-fable-5-1"); // not the most-workloads Opus recommendation
-  const preview = cheerio.load(docs("gemini")[0].body); preview(".status-subtext").text("Preview");
-  assert.throws(() => selectCandidate("gemini", preview.html()), /found 0/);
-  assert.equal(parse("gemini").id, "gemini-4-argon"); // preview computer-use feature does not exclude a stable model
-  assert.equal(new URL(selectCandidate("gemini", docs("gemini")[0].body).url).search, "?hl=en");
+  const lineup = docs("gemini")[0].body;
+  assert.equal(selectCandidate("gemini", lineup).id, "gemini-4-carbon"); // not the "efficient" Argon card or the "Flagship" text-to-speech card
+  assert.equal(selectCandidate("gemini", lineup).url, "https://aistudio.google.com/docs/models/gemini-4-carbon.md");
+  assert.throws(() => selectCandidate("gemini", lineup.replace('title="Gemini 4 Carbon"', 'badge="Preview" title="Gemini 4 Carbon"')), /found 0/);
+  assert.throws(() => selectCandidate("gemini", lineup.replace("Our efficient Gemini 4 frontier reasoning model", "Our strongest reasoning model")), /found 2/);
+  assert.throws(() => selectCandidate("gemini", lineup.replaceAll("{% card ", "{% tile ")), /found 0/); // a redesign holds the last profile instead of guessing
+  const unstable = docs("gemini"); unstable[1].body = unstable[1].body.replace("*   Stable: `gemini-4-carbon`", "*   Preview: `gemini-4-carbon`");
+  assert.throws(() => parse("gemini", unstable), /stable identity/);
+  const otherCode = docs("gemini"); otherCode[1].body = otherCode[1].body.replace("  * `gemini-4-carbon`", "  * `gemini-4-other`");
+  assert.throws(() => parse("gemini", otherCode), /model code/);
 });
 
 test("identity, source drift, malformed limits and unrecognized prices hold publication", () => {
@@ -59,6 +69,8 @@ test("identity, source drift, malformed limits and unrecognized prices hold publ
     const documents = docs("openai"); documents[1].body = documents[1].body.replaceAll(oldText, replacement);
     assert.throws(() => parse("openai", documents));
   }
+  const twoInputs = docs("openai"); twoInputs[1].body = twoInputs[1].body.replace(/^\| Cached input \|/m, "| Input |"); assert.notEqual(twoInputs[1].body, docs("openai")[1].body);
+  assert.throws(() => parse("openai", twoInputs), /ambiguous/);
   const documents = docs("openai"); documents[1].body = documents[1].body.replace('## Endpoints', '- Prices double for enterprise use.\n\n## Endpoints');
   assert.throws(() => parse("openai", documents), /qualifier/);
   const unknown = docs("claude"); unknown.at(-1)!.body = "<main>Support changed</main>"; assert.throws(() => parse("claude", unknown), /PDF/);
@@ -71,15 +83,14 @@ test("identity, source drift, malformed limits and unrecognized prices hold publ
     const restricted=docs('openai');restricted[1].body=restricted[1].body.replace('## Pricing',restriction+'\n\n## Pricing');assert.throws(()=>parse('openai',restricted),/eligibility/);
   }
   const claudeSurcharge=docs("claude");claudeSurcharge[1].body=claudeSurcharge[1].body.replace('</main>','<p>Prompts above 200K tokens incur a surcharge of 2x.</p></main>');assert.throws(()=>parse("claude",claudeSurcharge),/pricing condition/);
-  const geminiSurcharge=docs("gemini");geminiSurcharge[2].body=geminiSurcharge[2].body.replace('Standard</h3>','Standard</h3><p>Prompts above 200K tokens incur a surcharge of 2x.</p>');assert.throws(()=>parse("gemini",geminiSurcharge),/pricing qualifier/);
+  const geminiSurcharge=docs("gemini");geminiSurcharge[2].body=geminiSurcharge[2].body.replace('{% tab title="Standard" %}','{% tab title="Standard" %}\n  Prompts above 200K tokens incur a surcharge of 2x.\n');assert.throws(()=>parse("gemini",geminiSurcharge),/pricing qualifier/);
   const nestedClaude=docs("claude");const c=cheerio.load(nestedClaude[1].body);c('dl').filter((_,el)=>c(el).find('dt').toArray().some(dt=>c(dt).text()==='Input')).append('<dt>Long-context pricing</dt><dd>Prompts above 200K tokens incur a surcharge of 2x.</dd>');nestedClaude[1].body=c.html();assert.throws(()=>parse("claude",nestedClaude),/pricing field/);
-  const nestedGemini=docs("gemini");const g=cheerio.load(nestedGemini[2].body);g('section').filter((_,el)=>g(el).find('h3').first().text()==='Standard').find('table').append('<tfoot><tr><td colspan="3">Prompts above 200K tokens incur a surcharge of 2x.</td></tr></tfoot>');nestedGemini[2].body=g.html();assert.throws(()=>parse("gemini",nestedGemini),/pricing footnote/);
+  const nestedGemini=docs("gemini");nestedGemini[2].body=nestedGemini[2].body.replace('  * Used to improve our products','  * Long-context surcharge\n  * Not available\n  * 2x above 200K tokens\n\n  ---\n\n  * Used to improve our products');assert.throws(()=>parse("gemini",nestedGemini),/pricing row/);
+  const proseGemini=docs("gemini");proseGemini[2].body=proseGemini[2].body.replace('{% callout type="note" %}\n  Gemini 4 Carbon','Prices double above 200K input tokens.\n\n{% callout type="note" %}\n  Gemini 4 Carbon');assert.throws(()=>parse("gemini",proseGemini),/pricing condition/);
 });
 
-test("Gemini accepts reviewed search billing notes without mixing Contributor access into Standard", () => {
+test("Gemini reads one model's Standard tier and holds unknown notes or access limits", () => {
   const documents = docs("gemini");
-  documents[2].body = readFileSync("scripts/fixtures/frontier/gemini-pricing-2026-11-01.html", "utf8");
-  documents[2].hash = documentHash(documents[2].body);
   const facts = parse("gemini", documents);
   assert.equal(facts.pricing.input, 2);
   assert.equal(facts.pricing.output, 10);
@@ -87,14 +98,28 @@ test("Gemini accepts reviewed search billing notes without mixing Contributor ac
   assert.equal(facts.access, "Paid Gemini API; unavailable on the free tier");
   assert.match(facts.pricing.note, /internal tool system instructions/);
   assert.match(facts.pricing.note, /per individual search query/);
+  // The neighbouring Argon section carries an invite-only Contributor tier and
+  // Batch/Flex/Priority rates; none of that belongs to Carbon's Standard price.
+  assert.match(documents[2].body, /Contributor Tier is offered as a private preview/);
+  assert.match(documents[2].body, /\$3\.60 through/);
 
   for (const change of [
-    (body: string) => body.replace("each individual search query", "each individual search query plus an extra token surcharge"),
-    (body: string) => body.replace("Standard</h3>", "Standard</h3><p>Prompts above 200K tokens incur a surcharge of 2x.</p>"),
-    (body: string) => body.replace("Standard</h3>", "Standard</h3><aside>Standard is invite-only.</aside>"),
+    (body: string) => body.replace("query performed.", "query performed plus an extra token surcharge."),
+    (body: string) => body.replace('{% tab title="Standard" %}', '{% tab title="Standard" %}\n  Prompts above 200K tokens incur a surcharge of 2x.\n'),
+    (body: string) => body.replace('{% tab title="Standard" %}', '{% tab title="Standard" %}\n  {% callout type="note" %}\n  Standard is invite-only.\n\n  {% /callout %}\n'),
     (body: string) => body.replace("Every token the model processes is counted and billed", "Every token above 200K costs twice the normal rate"),
+    (body: string) => body.replace('{% tab title="Standard" %}', '{% tab title="Standard pricing" %}'),
+    (body: string) => body.replace("Paid Tier, per 1M tokens in USD", "Paid Tier, per 1K tokens in USD"),
+    (body: string) => body.replace("$4.00 starting December 1, 2026.", "$4.00 starting December 2, 2026."),
+    (body: string) => body.replace('## Gemini 4 Carbon  {% id="gemini-4-carbon" %}', '## Gemini 4 Carbon (legacy)  {% id="gemini-4-carbon" %}'),
+    // Prose in places that are neither a tier nor the section's own text.
+    (body: string) => body.replace('{% tabs %}\n  {% tab title="Standard" %}', '{% tabs %}\n  Prices double above 200K input tokens.\n\n  {% tab title="Standard" %}'),
+    (body: string) => body.replace('{% /tab %}\n\n  {% tab title="Batch" %}', '{% /tab %}\n\n  Prices double above 200K input tokens.\n\n  {% tab title="Batch" %}'),
+    (body: string) => body.replace('*[`gemini-4-carbon`](/docs/models/gemini-4-carbon)*', '*[`gemini-4-carbon`](/docs/models/gemini-4-carbon)*\n\n  Prices double above 200K input tokens.'),
   ]) {
-    assert.throws(() => parse("gemini", documents.map((document, i) => i === 2 ? { ...document, body: change(document.body) } : document)), /qualifier|restriction/);
+    const changed = change(documents[2].body);
+    assert.notEqual(changed, documents[2].body);
+    assert.throws(() => parse("gemini", documents.map((document, i) => i === 2 ? { ...document, body: changed } : document)), /qualifier|restriction|standard pricing section|unit|schedule|gap|identity|between pricing tiers|pricing condition/);
   }
 });
 
@@ -112,6 +137,70 @@ test("price dates and guidance use current facts and exclude stale recommendatio
   assert.match(comparisonHref(["gpt-6-astra","gpt-7-new"], available), /gpt-6-astra/);
 });
 
+// Regression: after Google moved its docs on 2026-11-02 the catalog adapter
+// parsed zero cards on every run, so Gemini 4 Carbon and Hydrogen never appeared.
+test("Gemini catalog reads both card forms from the Markdown lineup, keyed by docs slug", () => {
+  const cards = parseModelCards(docs("gemini")[0].body);
+  const byId = new Map(cards.map((c) => [c.id, c]));
+  assert.equal(cards.length, byId.size);
+  for (const [id, name] of [["gemini-4-carbon", "Gemini 4 Carbon"], ["gemini-4-argon", "Gemini 4 Argon"], ["gemini-4-hydrogen", "Gemini 4 Hydrogen"]]) assert.equal(byId.get(id)?.displayName, name);
+  assert.deepEqual([byId.get("gemini-3.8-flash")?.displayName, byId.get("gemini-3.8-flash")?.releaseStage], ["Gemini 3.8 Flash", "Stable"]);
+  assert.equal(byId.get("gemini-3-flash-preview")?.releaseStage, "Preview");
+  assert.equal(cards.length, 21); // cards only: the "All models" endpoint tables would re-announce old models
+  assert.ok(!byId.has("gemini-3.1-pro-preview"));
+  assert.deepEqual(parseModelCards("<html><a href=\"/gemini-api/docs/models/x\"><h3>X</h3></a></html>"), []);
+});
+
+test("Gemini catalog reads token limits in both label styles, and capabilities", () => {
+  const carbon = parseModelDetail(docs("gemini")[1].body);
+  assert.deepEqual([carbon.contextWindow, carbon.maxOutput], [1048576, 65536]);
+  assert.deepEqual([carbon.capabilities.thinking, carbon.capabilities.functionCalling, carbon.capabilities.imageGeneration, carbon.capabilities.liveApi], [true, true, false, false]);
+  const earlier = parseModelDetail("  *     **Input token limit** 1,048,576\n\n    **Output token limit** 65,536\n");
+  assert.deepEqual([earlier.contextWindow, earlier.maxOutput], [1048576, 65536]);
+  assert.equal(carbon.capabilities.contextCaching, undefined); // "Supported (Implicit only)" is not a plain yes
+  assert.equal(carbon.capabilities.agenticVideoUnderstanding, undefined); // "Supported (defaults to static)"
+  assert.deepEqual(parseModelDetail("no limits here"), { contextWindow: null, maxOutput: null, capabilities: {} });
+});
+
+// Regression: on 2026-11-17 OpenAI launched GPT-6.2 Astra and GPT-6.2 Sol and
+// reworded every pricing note. The profile refresh rejected Astra with
+// "Unrecognized OpenAI pricing qualifier" and kept serving GPT-6 Astra.
+const launch = (JSON.parse(readFileSync("scripts/fixtures/frontier/openai-2026-11-17.json", "utf8")).documents as {url: string; body: string}[]).map((d) => ({ ...d, hash: documentHash(d.body) }));
+test("GPT-6.2 launch: Astra is selected and its reworded pricing notes are accepted", () => {
+  const candidate = selectCandidate("openai", launch[0].body);
+  assert.deepEqual([candidate.id, candidate.name], ["gpt-6.2-astra", "GPT-6.2 Astra"]); // Sol is named beside it, as the balanced choice
+  const facts = parseFrontier("openai", candidate, launch.slice(0, 3));
+  assert.deepEqual([facts.pricing.input, facts.pricing.output], [8, 40]);
+  assert.deepEqual(facts.pricing.longContext, { above: 272000, inputMultiplier: 2, outputMultiplier: 1.5 });
+  assert.deepEqual(facts.context, { tokens: 1050000, kind: "total", maxInput: 922000 });
+  assert.equal(facts.output.tokens, 128000);
+  assert.deepEqual(facts.inputs, ["text", "image", "pdf"]);
+  assert.equal(facts.pricing.note, "Standard text-token rates. Caching, Batch, Fast mode and Ultrafast have separate rates, as do tools."); // no Flex tier on this page
+  assert.equal(facts.reasoning.levels, null); // the page no longer lists effort levels; say so instead of guessing
+  assert.match(presentFrontier({ id: "r", facts, verifiedAt: new Date().toISOString() }, undefined).reasoning, /Effort levels not verified/);
+});
+
+test("GPT-6.2 launch: Sol's page parses too, and stays a separate model", () => {
+  const sol = { id: "gpt-6.2-sol", name: "GPT-6.2 Sol", url: launch[3].url, rule: "openai-intro-flagship" as const };
+  const facts = parseFrontier("openai", sol, [launch[0], launch[3], launch[2]]);
+  assert.deepEqual([facts.id, facts.name, facts.pricing.input, facts.pricing.output], ["gpt-6.2-sol", "GPT-6.2 Sol", 2, 10]);
+  assert.throws(() => parseFrontier("openai", sol, launch.slice(0, 3)), /Missing document/); // never built from Astra's page
+  assert.throws(() => parseFrontier("openai", { ...sol, url: launch[1].url }, launch.slice(0, 3)), /identity mismatch/);
+});
+
+test("GPT-6.2 launch: wording that is still unknown holds publication and is named", () => {
+  for (const [from, to] of [
+    ["- Batch costs 50% of Standard rates.", "- Batch costs 50% of Standard rates for approved partners."],
+    ["input and cache rates double and output costs 1.5 times", "input and cache rates triple and output costs 1.5 times"],
+    ["- Ultrafast costs 3 times the Standard rate through February 28, 2027", "- Ultrafast and Standard cost 3 times the listed rate through February 28, 2027"],
+    ["## Endpoints", "- Requests from new accounts are billed at 2x.\n\n## Endpoints"],
+  ]) {
+    const documents = launch.slice(0, 3).map((d, i) => i === 1 ? { ...d, body: d.body.replace(from, to) } : d);
+    assert.notEqual(documents[1].body, launch[1].body);
+    assert.throws(() => parseFrontier("openai", selectCandidate("openai", documents[0].body), documents), /Unrecognized OpenAI pricing qualifier: - /);
+  }
+});
+
 test("conditional fetch reuses matching bodies, retries orphan 304 and rejects unsafe URLs/statuses", async () => {
   const url=docs("openai")[0].url; const store=memoryStore();
   const first=await documentReader("openai",store,fixtureFetch())(url);
@@ -126,8 +215,10 @@ test("conditional fetch reuses matching bodies, retries orphan 304 and rejects u
   for(const raw of ["http://developers.openai.com/api/docs/models.md","https://developers.openai.com.evil.test/api/docs/models.md","https://user:pass@developers.openai.com/api/docs/models.md","https://127.0.0.1/private","https://developers.openai.com/api/docs/models.md?key=private"]) assert.equal(allowedDocument("openai",raw),false);
   const geminiUrl = docs("gemini")[0].url;
   assert.equal(allowedDocument("gemini", geminiUrl), true);
-  for (const suffix of ["", "?hl=th", "?hl=en&hl=th", "?hl=en&redirect=https://evil.test"]) assert.equal(allowedDocument("gemini", geminiUrl.split("?")[0] + suffix), false);
-  await assert.rejects(documentReader("gemini", memoryStore(), (async () => new Response(null, {status:302, headers:{location:geminiUrl.replace("hl=en", "hl=th")}})) as typeof fetch)(geminiUrl), /302/);
+  assert.equal(allowedDocument("gemini", "https://aistudio.google.com/docs/models/gemini-4-carbon.md"), true);
+  for (const bad of [geminiUrl + "?hl=en", geminiUrl.replace(/\.md$/, ""), "https://ai.google.dev/gemini-api/docs/models?hl=en", "https://aistudio.google.com/prompts/new_chat.md", "https://aistudio.google.com/docs/../prompts/models.md", "https://aistudio.google.com.evil.test/docs/models.md"]) assert.equal(allowedDocument("gemini", bad), false, bad);
+  // The 2026-11-02 move answered the old URLs with a redirect; never follow one.
+  await assert.rejects(documentReader("gemini", memoryStore(), (async () => new Response(null, {status:301, headers:{location:"https://evil.test/"}})) as typeof fetch)(geminiUrl), /301/);
 });
 
 test("unchanged index still refreshes details, and rejected cached content is parsed again", async () => {
@@ -202,4 +293,31 @@ test("isolated PostgreSQL: migration, atomicity, history, recovery, concurrency 
     assert.equal((await frontierHealth(db)).providers.find(p=>p.provider==='openai')!.status,'stale');
     assert.ok((await readFrontier('',db)).current.some(m=>m.provider==='openai'&&m.freshness==='stale'));
   } finally { await pool.end(); }
+});
+
+test("isolated PostgreSQL: the GPT-6.2 launch replaces the profile once and a second run changes nothing", {skip:!testUrl}, async () => {
+  const pool=new Pool({connectionString:testUrl,max:5}); const db=drizzle(pool,{schema}) as Database;
+  const openai=async()=>(await frontierHealth(db)).providers.find(p=>p.provider==="openai")!;
+  try {
+    await db.execute(sql`drop table if exists frontier_states, frontier_revisions, frontier_documents cascade`);
+    await migrateFrontier(db);
+    await syncFrontier("openai",db,fixtureFetch()); // GPT-6 Astra, accepted before the launch
+    assert.equal((await openai()).modelId,"gpt-6-astra");
+    await syncFrontier("openai",db,fixtureFetch(launch));
+    const first=await openai(); assert.equal(first.modelId,"gpt-6.2-astra"); assert.equal(first.status,"current");
+    await syncFrontier("openai",db,fixtureFetch(launch));
+    const second=await openai(); assert.equal(second.revisionId,first.revisionId); assert.equal(second.status,"current");
+    const revisions=await db.execute<{model_id:string;n:number}>(sql`select model_id, count(*)::int as n from frontier_revisions where provider='openai' group by model_id order by model_id`);
+    assert.deepEqual(revisions.rows,[{model_id:"gpt-6-astra",n:1},{model_id:"gpt-6.2-astra",n:1}]);
+    const read=await readFrontier("gpt-6-astra",db);
+    assert.equal(read.current.find(m=>m.provider==="openai")!.name,"GPT-6.2 Astra");
+    assert.equal(read.available.find(m=>m.id==="gpt-6-astra")!.freshness,"archived"); // the earlier pick stays readable
+  } finally { await pool.end(); }
+});
+
+test("a document that is mostly blank lines is parsed in linear time", () => {
+  const padded = docs("gemini"); padded[2].body = padded[2].body.replace('{% callout type="note" %}\n  Gemini 4 Carbon', "\n".repeat(60_000) + '{% callout type="note" %}\n  Gemini 4 Carbon'); padded[1].body = padded[1].body.replace("**Inputs**", "\n".repeat(60_000) + "**Inputs**");
+  const started = performance.now();
+  try { parse("gemini", padded); } catch { /* acceptance is not the point; time is */ }
+  assert.ok(performance.now() - started < 2_000, "parser backtracked on a run of newlines");
 });

@@ -42,9 +42,10 @@ facts plus explanatory templates preserve a clear basis for each suggestion.
    matching body; a 304 without one requires an unconditional retry. Persist
    validators only alongside the body they describe. Cap bodies, request count,
    concurrency, retries and total run time. Allow only configured official HTTPS
-   hosts/paths; reject redirects. Pin Gemini documentation to English with
-   `?hl=en`; queryless URLs may redirect to other languages. Never execute
-   fetched content.
+   hosts/paths; reject redirects and query strings. Gemini documentation is read
+   from the English Markdown documents at `aistudio.google.com/docs/*.md`
+   (Google retired the `ai.google.dev` pages and their `?hl=en` pin on
+   2026-11-02). Never execute fetched content.
 3. **Provider adapters.** Discover candidates from explicit provider positioning
    in the current lineup, not lexical ID ordering, prices, context size or first
    seen dates. Require one eligible, generally available frontier candidate and
@@ -168,10 +169,13 @@ Provider selection contract:
   work. Match its API ID and detail link to an active detail page. This deliberately
   differs from the provider's most-workloads recommendation. Optional preview
   features do not make a stable model a preview.
-- Gemini: inspect stable model cards, require exactly one card positioned as the
-  flagship reasoning model, then verify its model code and stable version on the
-  detail page. Exclude creative TTS/live/image specialists. More than one matching
-  candidate, or no supported positioning, holds the previous choice for review.
+- Gemini: inspect the lineup's model cards, require exactly one card positioned
+  as the strongest, most capable or flagship reasoning model, then verify its
+  model code and `Stable:` version on the detail page. The Gemini 4 cards carry
+  no stability badge, so the detail page is the proof. Exclude creative
+  TTS/live/image specialists. More than one matching candidate, or no supported
+  positioning, holds the previous choice for review. Prices come from that
+  model's own section of the pricing page, Standard tier only.
 
 Each provider refresh has at most 4 documents, 2 simultaneous HTTP requests,
 12 seconds per request, no automatic 429/5xx retry, and a 45-second run deadline.
