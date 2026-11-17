@@ -10,6 +10,8 @@
 //   {% /card %}
 //   {% card badge="Stable" description="…" href="/docs/models/gemini-3.8-flash"
 //      title="Gemini 3.8 Flash" variant="model" /%}
+// The new pages send no ETag or Last-Modified, so this source always re-reads
+// the lineup and never reports "unchanged".
 // Rows stay keyed by the docs slug in the card's link, as they always were, so
 // models already in the table are matched rather than announced again. The
 // page's "All models" endpoint tables are deliberately not read: they list
@@ -94,8 +96,14 @@ export function parseModelDetail(md: string): ModelDetail {
   detail.contextWindow = limit("Context window (unified input and output token limit)") ?? limit("Input token limit");
   detail.maxOutput = limit("Max output") ?? limit("Output token limit");
 
-  for (const hit of md.matchAll(/\[\*\*([^*\]]+)\*\*\]\([^)]*\)\s*\{% badge [^%]*?type="(supported|not-supported)"[^%]*?\/%\}/g)) {
-    detail.capabilities[capabilityKey(hit[1]!)] = hit[2] === "supported";
+  for (const hit of md.matchAll(/\[\*\*([^*\]]+)\*\*\]\([^)]*\)\s*\{% badge ([^%]*?)\/%\}/g)) {
+    const type = hit[2]!.match(/type="(supported|not-supported)"/)?.[1];
+    // A labelled badge qualifies the claim ("Supported (Implicit only)"), and a
+    // yes/no flag would drop the qualifier, so those are not recorded. The one
+    // exception lists reasoning levels, which is still plain support.
+    const label = hit[2]!.match(/label=([^"]*?)\s*(?:type=|$)/)?.[1]?.trim();
+    if (!type || (label && !/^Supported \((?:minimal|low|medium|high)(?:, (?:minimal|low|medium|high))*\)$/.test(label))) continue;
+    detail.capabilities[capabilityKey(hit[1]!)] = type === "supported";
   }
   return detail;
 }

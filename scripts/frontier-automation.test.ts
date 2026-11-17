@@ -69,6 +69,8 @@ test("identity, source drift, malformed limits and unrecognized prices hold publ
     const documents = docs("openai"); documents[1].body = documents[1].body.replaceAll(oldText, replacement);
     assert.throws(() => parse("openai", documents));
   }
+  const twoInputs = docs("openai"); twoInputs[1].body = twoInputs[1].body.replace(/^\| Cached input \|/m, "| Input |"); assert.notEqual(twoInputs[1].body, docs("openai")[1].body);
+  assert.throws(() => parse("openai", twoInputs), /ambiguous/);
   const documents = docs("openai"); documents[1].body = documents[1].body.replace('## Endpoints', '- Prices double for enterprise use.\n\n## Endpoints');
   assert.throws(() => parse("openai", documents), /qualifier/);
   const unknown = docs("claude"); unknown.at(-1)!.body = "<main>Support changed</main>"; assert.throws(() => parse("claude", unknown), /PDF/);
@@ -110,10 +112,14 @@ test("Gemini reads one model's Standard tier and holds unknown notes or access l
     (body: string) => body.replace("Paid Tier, per 1M tokens in USD", "Paid Tier, per 1K tokens in USD"),
     (body: string) => body.replace("$4.00 starting December 1, 2026.", "$4.00 starting December 2, 2026."),
     (body: string) => body.replace('## Gemini 4 Carbon  {% id="gemini-4-carbon" %}', '## Gemini 4 Carbon (legacy)  {% id="gemini-4-carbon" %}'),
+    // Prose in places that are neither a tier nor the section's own text.
+    (body: string) => body.replace('{% tabs %}\n  {% tab title="Standard" %}', '{% tabs %}\n  Prices double above 200K input tokens.\n\n  {% tab title="Standard" %}'),
+    (body: string) => body.replace('{% /tab %}\n\n  {% tab title="Batch" %}', '{% /tab %}\n\n  Prices double above 200K input tokens.\n\n  {% tab title="Batch" %}'),
+    (body: string) => body.replace('*[`gemini-4-carbon`](/docs/models/gemini-4-carbon)*', '*[`gemini-4-carbon`](/docs/models/gemini-4-carbon)*\n\n  Prices double above 200K input tokens.'),
   ]) {
     const changed = change(documents[2].body);
     assert.notEqual(changed, documents[2].body);
-    assert.throws(() => parse("gemini", documents.map((document, i) => i === 2 ? { ...document, body: changed } : document)), /qualifier|restriction|standard pricing section|unit|schedule|gap|identity/);
+    assert.throws(() => parse("gemini", documents.map((document, i) => i === 2 ? { ...document, body: changed } : document)), /qualifier|restriction|standard pricing section|unit|schedule|gap|identity|between pricing tiers|pricing condition/);
   }
 });
 
@@ -151,6 +157,8 @@ test("Gemini catalog reads token limits in both label styles, and capabilities",
   assert.deepEqual([carbon.capabilities.thinking, carbon.capabilities.functionCalling, carbon.capabilities.imageGeneration, carbon.capabilities.liveApi], [true, true, false, false]);
   const earlier = parseModelDetail("  *     **Input token limit** 1,048,576\n\n    **Output token limit** 65,536\n");
   assert.deepEqual([earlier.contextWindow, earlier.maxOutput], [1048576, 65536]);
+  assert.equal(carbon.capabilities.contextCaching, undefined); // "Supported (Implicit only)" is not a plain yes
+  assert.equal(carbon.capabilities.agenticVideoUnderstanding, undefined); // "Supported (defaults to static)"
   assert.deepEqual(parseModelDetail("no limits here"), { contextWindow: null, maxOutput: null, capabilities: {} });
 });
 
@@ -305,4 +313,11 @@ test("isolated PostgreSQL: the GPT-6.2 launch replaces the profile once and a se
     assert.equal(read.current.find(m=>m.provider==="openai")!.name,"GPT-6.2 Astra");
     assert.equal(read.available.find(m=>m.id==="gpt-6-astra")!.freshness,"archived"); // the earlier pick stays readable
   } finally { await pool.end(); }
+});
+
+test("a document that is mostly blank lines is parsed in linear time", () => {
+  const padded = docs("gemini"); padded[2].body = padded[2].body.replace('{% callout type="note" %}\n  Gemini 4 Carbon', "\n".repeat(60_000) + '{% callout type="note" %}\n  Gemini 4 Carbon'); padded[1].body = padded[1].body.replace("**Inputs**", "\n".repeat(60_000) + "**Inputs**");
+  const started = performance.now();
+  try { parse("gemini", padded); } catch { /* acceptance is not the point; time is */ }
+  assert.ok(performance.now() - started < 2_000, "parser backtracked on a run of newlines");
 });

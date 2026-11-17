@@ -8,8 +8,8 @@ price and capability updates do not require a website deployment. See
 
 Each profile has a verification timestamp, source links and an accepted revision.
 The tracker selects the documented demanding-work pick for Claude, the introductory
-flagship recommendation for OpenAI, and the stable card Google positions as its
-strongest reasoning model for Gemini. It picks one model per provider; a sibling
+flagship recommendation for OpenAI, and for Gemini the model Google positions as
+its strongest reasoning model, confirmed stable on its own model page. It picks one model per provider; a sibling
 launched beside it (GPT-6.2 Sol next to GPT-6.2 Astra) is tracked in the provider
 catalog, not as a second profile. It does not rank model names or assume the
 highest number is best.

@@ -132,8 +132,8 @@ export function parseFrontier(provider: FrontierProvider, candidate: Candidate, 
     const pricing = detail.split(/^### Text tokens\s*$/m)[1]?.split(/^## /m)[0];
     need(pricing, "OpenAI text pricing missing");
     const rate = (name: string) => {
-      const match = pricing.match(new RegExp(`^\\| ${name} \\| \\$([\\d.]+) \\| 1M tokens \\|$`, "m"));
-      need(match, "OpenAI standard per-million price missing"); return Number(match[1]);
+      const rows = [...pricing.matchAll(new RegExp(`^\\| ${name} \\| \\$([\\d.]+) \\| 1M tokens \\|$`, "gm"))];
+      need(rows.length === 1, rows.length ? "OpenAI standard per-million price is ambiguous" : "OpenAI standard per-million price missing"); return Number(rows[0][1]);
     };
     let longContext: FrontierFacts["pricing"]["longContext"];
     // Every note under the text-token table must match a reviewed template.
@@ -207,7 +207,7 @@ export function parseFrontier(provider: FrontierProvider, candidate: Candidate, 
       properties.set(label, cells[1]);
     }
     const property = (key: string) => { const v = properties.get(key); need(v, `Gemini specification missing: ${key}`); return v; };
-    const labelled = (key: string) => new Map([...property(key).matchAll(/^\s*\*\*([^*]+)\*\*[ \t]+(\S.*)$/gm)].map((m) => [clean(m[1]), plain(m[2])]));
+    const labelled = (key: string) => new Map([...property(key).matchAll(/^[ \t]*\*\*([^*]+)\*\*[ \t]+(\S.*)$/gm)].map((m) => [clean(m[1]), plain(m[2])]));
     need(clean(property("Model code")) === `\`${candidate.id}\``, "Gemini model code mismatch");
     need(property("Versions").split("\n").some((line) => clean(line) === `* Stable: \`${candidate.id}\``), "Gemini stable identity mismatch");
     const types = labelled("Supported data types"), limits = labelled("Token limits");
@@ -226,11 +226,16 @@ export function parseFrontier(provider: FrontierProvider, candidate: Candidate, 
     const from = headings[0].index! + headings[0][0].length, rest = prices.slice(from), nextSection = rest.search(/^## /m);
     const scope = nextSection < 0 ? rest : rest.slice(0, nextSection);
     const tabs = onlyBlock(scope, /\{% tabs %\}([\s\S]*?)\{% \/tabs %\}/g, "Gemini pricing tiers missing or ambiguous");
+    // Nothing may sit inside the tier block but outside a tier.
+    need(!clean(tabs.replace(/\{% tab title="[^"]*" %\}[\s\S]*?\{% \/tab %\}/g, "")), "Gemini: unrecognized content between pricing tiers");
     // Outside the tiers: an identity/try-it header, a description and access notes.
+    // The header is layout around a model code and a button; its words are still read.
+    const layouts = [...scope.matchAll(/\{% two-column-layout %\}([\s\S]*?)\{% \/two-column-layout %\}/g)].map((m) => plain(m[1].replace(/\{%[^%]*%\}/g, " ")));
+    for (const layout of layouts) rejectUnknownPriceConditions(layout, "Gemini");
     let preamble = scope.replace(/\{% tabs %\}[\s\S]*?\{% \/tabs %\}/g, "").replace(/\{% two-column-layout %\}[\s\S]*?\{% \/two-column-layout %\}/g, "").replace(/\{% hr \/%\}/g, "");
     const callouts = [...preamble.matchAll(/\{% callout type="note" %\}([\s\S]*?)\{% \/callout %\}/g)].map((m) => plain(m[1]));
     preamble = preamble.replace(/\{% callout type="note" %\}[\s\S]*?\{% \/callout %\}/g, "");
-    need(!/\{%|^\s*\|/m.test(preamble), "Gemini: unrecognized pricing section content");
+    need(!/\{%|^[ \t]*\|/m.test(preamble), "Gemini: unrecognized pricing section content");
     for (const paragraph of preamble.split(/\n\s*\n/)) rejectUnknownPriceConditions(plain(paragraph), "Gemini");
     const standardTabs = [...tabs.matchAll(/\{% tab title="([^"]+)" %\}([\s\S]*?)\{% \/tab %\}/g)].filter((t) => t[1] === "Standard");
     need(standardTabs.length === 1, "Gemini standard pricing section missing or ambiguous");

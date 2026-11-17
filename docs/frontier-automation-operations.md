@@ -15,6 +15,8 @@ validation. Each provider permits two concurrent requests, a 45-second fetch
 deadline and at most eight requests including an orphan-304 retry. Responses are
 capped at 2 MiB. There are no paid model calls or new schedules.
 Gemini documents are the Markdown pages under `aistudio.google.com/docs/`.
+They are served without an ETag or Last-Modified, so each Gemini refresh
+downloads its three documents in full; a 304 is not expected there.
 Redirects, query parameters and URLs outside the official allowlist fail the
 refresh instead of expanding its network access. A provider that moves its
 documentation therefore shows up as `Official document returned HTTP 301`, as
@@ -85,7 +87,10 @@ why. `/api/health` shows the reason under `frontier.providers[].error`:
 - `Official document returned HTTP 301` means the document moved.
 
 Because the deployment gate needs all three profiles current, a rewording blocks
-releases until its adapter is repaired. Capture the live documents, add them to
+releases until its adapter is repaired. For the same reason a rollback to code
+that cannot read the current documents stops at the gate with the older pollers
+already installed; recover with the `restore`/`resume` maintenance operations
+rather than by redeploying an earlier commit. Capture the live documents, add them to
 `scripts/fixtures/frontier/`, add the narrowest pattern that accepts the new
 wording, and keep a test that still rejects wording nobody has reviewed.
 
