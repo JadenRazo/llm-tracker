@@ -46,9 +46,13 @@ export function isUnknownPath(pathname: string, articleRoutes = STATIC_ARTICLE_R
 
   const [first, second] = segments;
 
-  // Model existence is database-owned. Edge middleware validates only path shape.
+  // Model existence is database-owned. Edge middleware validates only path
+  // shape: any catalog model ID, which is not limited to the three provider
+  // prefixes (`o3`, `text-embedding-3-large`). Keep in step with
+  // CATALOG_MODEL_ID in src/lib/model-directory.ts, which this file cannot
+  // import without pulling the database client into the Edge bundle.
   if (first === "models" && segments.length > 1)
-    return segments.length !== 2 || !/^(?:claude|gpt|gemini)-[a-z0-9.-]{1,90}$/.test(second);
+    return segments.length !== 2 || !/^[a-z0-9][a-z0-9._-]{1,99}$/.test(second);
 
   // Legacy redirect roots pass straight through to next.config's 308s.
   if (LEGACY_REDIRECT_ROOTS.has(first)) return false;

@@ -25,10 +25,10 @@
 // filled in on the run that first sees it. Pricing is still not published in
 // the docs and stays null.
 //
-// Layout is fragile. If zero models parse we do NOT throw — we log and return
-// status "skipped" so a Google docs redesign degrades gracefully rather than
-// erroring the poller (Anthropic's page is stable enough to throw on; this one
-// is not).
+// Layout is fragile. If zero models parse, nothing is written and the run is
+// recorded as an ERROR. It used to be "skipped", which is how the November 2026
+// docs move hid Gemini 4 Carbon and Hydrogen for two weeks with health green.
+// One failing source does not stop the tier or block a deploy.
 //
 // models.id namespacing: model ids are the bare upstream slug, NOT
 // provider-namespaced (Phase 2.2 decision — re-namespacing models.id was judged
@@ -41,7 +41,7 @@
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import { tryGetDb, type Database } from "@/lib/db";
 import { events, models } from "@/lib/db/schema";
-import { fetchConditional } from "@/lib/poller/conditional-fetch";
+import { fetchConditional, loadPersistedCacheHeaders } from "@/lib/poller/conditional-fetch";
 import type { RunResult } from "@/lib/poller/runner";
 import type { Provider } from "@/lib/providers";
 import type { SourceDescriptor } from "@/lib/sources/registry";
@@ -208,7 +208,8 @@ async function enrichMissingLimits(db: Database, now: Date): Promise<number> {
 }
 
 export async function runGeminiModels(): Promise<RunResult> {
-  const res = await fetchConditional(MODELS_URL, SOURCE_KEY);
+  // Validators from a recorded successful run only; see openai_models.
+  const res = await fetchConditional(MODELS_URL, SOURCE_KEY, { cacheHeaders: await loadPersistedCacheHeaders(SOURCE_KEY) });
 
   if (res.unchanged) {
     // The LISTING is unchanged; that says nothing about whether every model we
@@ -232,12 +233,9 @@ export async function runGeminiModels(): Promise<RunResult> {
 
   const parsed = parseModelCards(res.body);
   if (parsed.length === 0) {
-    // Fail soft — Google's docs layout is fragile; don't error the poller.
-    // eslint-disable-next-line no-console
-    console.warn(`[${SOURCE_KEY}] parsed 0 model cards — docs layout likely changed; skipping (no data wiped)`);
     const dbFallback = tryGetDb();
-    const toppedUp = dbFallback ? await enrichMissingLimits(dbFallback, new Date()) : 0;
-    return { inserted: 0, updated: toppedUp, skipped: 1, status: "skipped", etag: res.etag, lastModified: res.lastModified };
+    if (dbFallback) await enrichMissingLimits(dbFallback, new Date());
+    throw new Error("parsed 0 model cards from the lineup; docs layout likely changed, catalog left as it was");
   }
 
   const db = tryGetDb();
@@ -279,7 +277,7 @@ export async function runGeminiModels(): Promise<RunResult> {
         lastSeenAt: now,
         provider: PROVIDER,
       })),
-    );
+    ).onConflictDoNothing({ target: models.id });
     inserted = newModels.length;
 
     await db

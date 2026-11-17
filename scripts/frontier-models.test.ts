@@ -40,7 +40,9 @@ test("review age uses the editorial source date, with an exact 30-day boundary",
 
 test("new routes pass middleware while unknown profiles and nested comparison paths hard-404", () => {
   for (const path of ["/", "/compare", "/models", ...FRONTIER_MODELS.map((m) => `/models/${m.id}`)]) assert.equal(isUnknownPath(path), false, path);
-  for (const path of ["/models/unknown", "/models/gpt-6-astra/nope", "/compare/nope"]) assert.equal(isUnknownPath(path), true, path);
+  // A well-formed ID reaches the app, which decides from the database whether it exists.
+  assert.equal(isUnknownPath("/models/unknown"), false);
+  for (const path of ["/models/Not_A-Model!", "/models/gpt-6-astra/nope", "/compare/nope"]) assert.equal(isUnknownPath(path), true, path);
 });
 
 

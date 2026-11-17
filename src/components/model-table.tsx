@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useId, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { Check, Copy, Search } from "lucide-react";
 import type { Model } from "@/lib/db/schema";
 import {
@@ -41,7 +42,9 @@ function ModelIdentity({ model }: { model: Model }) {
   return (
     <div className="min-w-0">
       <p className="font-medium text-[var(--color-text-primary)] [overflow-wrap:anywhere]">
-        {model.displayName || model.id}
+        <Link href={`/models/${model.id}`} className="model-name-link">
+          {model.displayName || model.id}
+        </Link>
       </p>
       <div className="mt-1 flex items-center gap-2">
         <code className="model-id min-w-0 flex-1 whitespace-normal break-all">
