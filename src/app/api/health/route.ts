@@ -21,6 +21,7 @@ import { NextResponse } from "next/server";
 import { sql } from "drizzle-orm";
 import { tryGetDb } from "@/lib/db";
 import { frontierHealth } from "@/lib/frontier/health";
+import { benchmarkHealth } from "@/lib/benchmarks/read";
 import { SOURCE_REGISTRY } from "@/lib/sources/registry";
 import { LAST_GOOD_LOOKBACK_SECONDS, staleSources, type SourceState } from "@/lib/source-health";
 
@@ -132,6 +133,9 @@ export async function GET(): Promise<NextResponse> {
         lastPollAgeSeconds,
         sources: { total: SOURCE_REGISTRY.length, failing, neverRan, stale },
         frontier,
+        // Detail only. A benchmark feed that stops refreshing already appears
+        // under `sources.failing` or `sources.stale`, which decide `ok`.
+        benchmarks: await benchmarkHealth(db),
         ...(reasons.length > 0 ? { reasons } : {}),
       },
       { headers },

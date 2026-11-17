@@ -221,6 +221,19 @@ export const frontierRevisions = pgTable("frontier_revisions", {
   verifiedAt: nowTz("verified_at"),
 }, (t) => ({ modelIdx: index("frontier_revisions_model_idx").on(t.provider, t.modelId, t.verifiedAt) }));
 
+// Benchmark results: one accepted snapshot per feed, with the latest attempt.
+export const benchmarkSnapshots = pgTable("benchmark_snapshots", {
+  source: text("source").primaryKey(),
+  contentHash: text("content_hash"),
+  rows: jsonb("rows").$type<unknown[]>().notNull().default(sql`'[]'::jsonb`),
+  rowCount: integer("row_count").notNull().default(0),
+  etag: text("etag"),
+  publishedAt: timestamp("published_at", { withTimezone: true, mode: "date" }),
+  verifiedAt: timestamp("verified_at", { withTimezone: true, mode: "date" }),
+  attemptedAt: timestamp("attempted_at", { withTimezone: true, mode: "date" }),
+  error: text("error"),
+});
+
 export const frontierStates = pgTable("frontier_states", {
   provider: text("provider").primaryKey(),
   revisionId: text("revision_id").references(() => frontierRevisions.id),

@@ -135,7 +135,8 @@ may require occasional adapter repairs; zero human attention forever is not a
 credible promise. Unknown capabilities and newly introduced pricing dimensions
 are shown as unavailable or hold the update, never inferred from an older model.
 Cross-provider benchmark claims need a separate comparable-evaluation source and
-are outside this release. Chat subscription features/prices remain separate.
+are outside this release. (Added in November 2026 as its own layer: see
+[benchmarks.md](benchmarks.md).) Chat subscription features/prices remain separate.
 
 Use the existing two-hour tier for the new profile sources. Budget a small bounded
 set of public document reads per provider, with conditional requests; no paid

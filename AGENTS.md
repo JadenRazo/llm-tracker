@@ -17,6 +17,7 @@ show in sparse checkouts before declaring files missing.
 | --- | --- |
 | Pages, navigation, models and feeds | src/app/, src/components/, src/lib/providers.ts, src/lib/provider-meta.ts, src/lib/model-catalog.ts, src/lib/model-directory.ts |
 | Source/ingestion behavior | src/lib/sources/registry.ts, provider adapters, src/lib/poller/ |
+| Benchmark results and comparisons | docs/benchmarks.md, src/lib/benchmarks/, src/components/benchmarks/, src/app/compare/ |
 | Empty, unavailable or stale states | src/lib/load-result.ts, src/lib/staleness.ts, src/lib/source-health.ts, src/app/api/health/route.ts |
 | Curated content | content/tips/README.md, content/guides/README.md, src/lib/content.ts, src/lib/mdx-sanitize.ts |
 | Schema/query changes | src/lib/db/, src/lib/env.ts, drizzle.config.ts, scripts/read-coalescing.test.ts |
@@ -68,6 +69,7 @@ DISABLE_CRON=1 npm run dev (port 3200) with isolated data. Select relevant check
 | Types and lint | npm run typecheck; npm run lint |
 | Isolated read concurrency/failure regressions | npm run test:reads |
 | Model discovery and silent-miss regressions | npm run test:catalog |
+| Benchmark feeds, model matching and comparison rules | npm run test:benchmarks |
 | Navigation/activity/catalog regressions | npm run test:ui |
 | Web build and dynamic-route guard | npm run build, then npm run check:prerender |
 | Poller bundle/load check | npm run build:poller |

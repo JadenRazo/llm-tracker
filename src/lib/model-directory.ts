@@ -53,3 +53,23 @@ export function catalogPrice(value: string | null | undefined): string | null {
   const n = value == null ? Number.NaN : Number(value);
   return Number.isFinite(n) && n >= 0 ? String(n) : null;
 }
+
+/** What the comparison picker needs to know about a tracked model. */
+export interface DirectoryEntry { id: string; name: string; provider: Provider; firstSeenAt: string }
+
+/**
+ * Every tracked model, newest first within each provider. `null` means the read
+ * failed, which is not the same as an empty catalog.
+ */
+export async function readModelDirectory(db: Database | null = tryGetDb()): Promise<DirectoryEntry[] | null> {
+  if (!db) return null;
+  try {
+    const rows = await db.select({ id: models.id, name: models.displayName, provider: models.provider, firstSeenAt: models.firstSeenAt }).from(models);
+    return rows
+      .filter((row): row is typeof row & { provider: Provider } => isProvider(row.provider) && CATALOG_MODEL_ID.test(row.id))
+      .map((row) => ({ id: row.id, name: row.name || row.id, provider: row.provider, firstSeenAt: row.firstSeenAt.toISOString() }))
+      .sort((a, b) => a.provider.localeCompare(b.provider) || b.firstSeenAt.localeCompare(a.firstSeenAt) || a.name.localeCompare(b.name));
+  } catch {
+    return null;
+  }
+}

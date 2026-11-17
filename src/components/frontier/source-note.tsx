@@ -8,6 +8,6 @@ export function FrontierSourceNote({ models }: { models: readonly FrontierModel[
     {models.map((model) => <p key={model.id} data-model-id={model.id} data-revision={model.revisionId ?? "bundled"} data-freshness={model.freshness}>
       <strong>{model.name}</strong> · <time dateTime={model.verifiedAt}>{verificationLabel(model.verifiedAt)}</time><br />{model.freshnessNote}
     </p>)}
-    <p>Task guidance follows documented capabilities. No cross-lab performance ranking. API limits and prices differ from chat subscriptions. Open a profile for the official sources and pricing conditions.</p>
+    <p>Task guidance follows documented capabilities, not benchmark scores. Benchmark results are shown separately, each with its publisher and source. API limits and prices differ from chat subscriptions. Open a profile for the official sources and pricing conditions.</p>
   </div>;
 }

@@ -1,49 +1,26 @@
 "use client";
 
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
 import { useState } from "react";
 import { ArrowUpRight } from "lucide-react";
-import { comparisonHref, comparisonRows, comparisonSelection, differingRows, type FrontierModel } from "@/lib/frontier-models";
+import { comparisonRows, differingRows, type FrontierModel } from "@/lib/frontier-models";
 import { getProviderStyle } from "@/lib/provider-meta";
 
-export function ModelComparison({ asOf, available, missingIds, unavailable }: { asOf: string; available: FrontierModel[]; missingIds: string[]; unavailable: boolean }) {
-  const params = useSearchParams();
-  const models = comparisonSelection(params.get("models"), available);
-  const requested = new Set((params.get("models") ?? "").split(","));
-  const unresolved = missingIds.filter((id) => requested.has(id));
+/**
+ * Verified specifications and prices, side by side. Only models with a
+ * verified profile have these; the page chooses which models to pass in.
+ */
+export function SpecComparison({ asOf, models }: { asOf: string; models: FrontierModel[] }) {
   const [differences, setDifferences] = useState(false);
   const rows = comparisonRows(models, asOf);
   const shownRows = differences ? differingRows(rows) : rows;
-
-  function toggle(id: string) {
-    const ids = models.map((model) => model.id);
-    const next = ids.includes(id) ? ids.filter((value) => value !== id) : [...ids, id];
-    // Next integrates native history updates with useSearchParams. Push keeps
-    // every comparison bookmarkable and restores selection on browser Back.
-    window.history.pushState(null, "", comparisonHref(next, available));
-  }
-
   return (
     <>
-      {unresolved.length > 0 && <p role="status" className="frontier-source-note needs-review">{unavailable ? "Requested model data is temporarily unavailable" : "No accepted profile was found"}: {unresolved.join(", ")}. Your requested IDs remain in the URL.</p>}
-      <fieldset className="comparison-picker">
-        <legend>Choose two or three models</legend>
-        <div>{available.map((model) => (
-          <div key={model.id} className="comparison-model-option" style={getProviderStyle(model.provider)}>
-            <label><input type="checkbox" disabled={models.length >= 3 && !models.some((m) => m.id === model.id)} checked={models.some((m) => m.id === model.id)} onChange={() => toggle(model.id)} /><span><span className="frontier-lab"><span className="provider-dot" aria-hidden />{model.lab}</span><strong>{model.name}</strong></span></label>
-            <Link className="comparison-profile-link" href={`/models/${model.id}`} aria-label={`Read ${model.name} profile`}>Profile <ArrowUpRight size={14} aria-hidden /></Link>
-          </div>
-        ))}</div>
-      </fieldset>
-      <div className="comparison-toolbar"><p role="status">{models.length} of {available.length} models selected</p><label><input type="checkbox" checked={differences} onChange={(event) => setDifferences(event.target.checked)} />Show differences only</label></div>
-      {models.length < 2 ? <div className="comparison-empty"><h2>{models.length === 0 ? "Choose your first two models." : "Add one more model to compare."}</h2><p>Select models above to compare their strengths, limits, and pricing side by side.</p></div> : <>
-        <p className="comparison-explainer">Standard API prices in USD per million tokens. Verification dates appear below; rates follow the published schedule. Conditions appear alongside the rates. Task guidance follows documented capabilities; it is not a performance ranking.</p>
-        <div className="comparison-desktop">
+      <div className="comparison-toolbar"><p className="comparison-explainer">Standard API prices in USD per million tokens. Verification dates appear below; rates follow the published schedule. Conditions appear alongside the rates.</p><label><input type="checkbox" checked={differences} onChange={(event) => setDifferences(event.target.checked)} />Show differences only</label></div>
+      <div className="comparison-desktop">
           <table className="comparison-table"><caption className="sr-only">Frontier model comparison{differences ? ", differences only" : ""}</caption><thead><tr><th scope="col">What matters</th>{models.map((model) => <th scope="col" key={model.id} style={getProviderStyle(model.provider)}><Link href={`/models/${model.id}`}>{model.name}<ArrowUpRight size={15} aria-hidden /></Link></th>)}</tr></thead><tbody>{shownRows.map((row) => <tr key={row.label}><th scope="row">{row.label}</th>{row.values.map((value, i) => <td key={models[i].id}>{value}</td>)}</tr>)}<tr><th scope="row">Official sources</th>{models.map((model) => <td key={model.id} className="comparison-sources" style={getProviderStyle(model.provider)}>{model.sources.map((source) => <a key={source.url} href={source.url}>{source.label}<ArrowUpRight size={13} aria-hidden /></a>)}</td>)}</tr></tbody></table>
         </div>
-        <div className="comparison-mobile">{shownRows.map((row) => <section key={row.label}><h2>{row.label}</h2><dl>{models.map((model, i) => <div key={model.id} style={getProviderStyle(model.provider)}><dt className="provider-label"><span className="provider-dot" aria-hidden />{model.name}</dt><dd>{row.values[i]}</dd></div>)}</dl></section>)}<section><h2>Official sources</h2>{models.map((model) => <div className="comparison-mobile-source" key={model.id} style={getProviderStyle(model.provider)}><Link href={`/models/${model.id}`}>{model.name} profile</Link>{model.sources.map((source) => <a href={source.url} key={source.url}>{source.label} ↗</a>)}</div>)}</section></div>
-      </>}
+        <div className="comparison-mobile">{shownRows.map((row) => <section key={row.label}><h3>{row.label}</h3><dl>{models.map((model, i) => <div key={model.id} style={getProviderStyle(model.provider)}><dt className="provider-label"><span className="provider-dot" aria-hidden />{model.name}</dt><dd>{row.values[i]}</dd></div>)}</dl></section>)}<section><h3>Official sources</h3>{models.map((model) => <div className="comparison-mobile-source" key={model.id} style={getProviderStyle(model.provider)}><Link href={`/models/${model.id}`}>{model.name} profile</Link>{model.sources.map((source) => <a href={source.url} key={source.url}>{source.label} ↗</a>)}</div>)}</section></div>
     </>
   );
 }

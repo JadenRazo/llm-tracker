@@ -25,7 +25,8 @@
     "build:poller": "node scripts/build-poller.mjs",
     "check:prerender": "node scripts/check-no-prerendered-db-routes.mjs",
     "check:404": "node scripts/check-not-found.mjs",
-    "test:frontier": "node scripts/check-frontier.mjs"
+    "test:frontier": "node scripts/check-frontier.mjs",
+    "test:benchmarks": "node scripts/check-benchmarks.mjs"
   },
   "dependencies": {
     "@tailwindcss/postcss": "^4.1.0",
