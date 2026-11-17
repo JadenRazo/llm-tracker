@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 export const FRONTIER_SCHEMA_VERSION = 1;
-export const FRONTIER_PARSER_VERSION = "2026-11-01.1";
+export const FRONTIER_PARSER_VERSION = "2026-11-17.1";
 export const FRONTIER_MAX_AGE_MS = 6 * 60 * 60 * 1000;
 export const frontierProviders = ["claude", "openai", "gemini"] as const;
 const count = z.number().int().positive().max(100_000_000);
@@ -50,13 +50,15 @@ export interface FrontierState { provider: FrontierProvider; revisionId: string 
 export const LINEUPS: Record<FrontierProvider, string> = {
   claude: "https://platform.claude.com/docs/en/models/overview",
   openai: "https://developers.openai.com/api/docs/models.md",
-  gemini: "https://ai.google.dev/gemini-api/docs/models?hl=en",
+  // Google moved the Gemini API docs to AI Studio in November 2026. The `.md`
+  // documents are English-only and take no query string.
+  gemini: "https://aistudio.google.com/docs/models.md",
 };
 export const AUXILIARY = {
   claudeEffort: "https://platform.claude.com/docs/en/build-with-claude/effort",
   claudePdf: "https://platform.claude.com/docs/en/build-with-claude/pdf-support",
   openaiPdf: "https://developers.openai.com/api/docs/guides/file-inputs.md",
-  geminiPricing: "https://ai.google.dev/gemini-api/docs/pricing?hl=en",
+  geminiPricing: "https://aistudio.google.com/docs/pricing.md",
 };
 
 /** A discovered link never grants permission to fetch an arbitrary URL. */
@@ -64,9 +66,9 @@ export function allowedDocument(provider: FrontierProvider, raw: string): boolea
   try {
     const url = new URL(raw);
     if (url.protocol !== "https:" || url.username || url.password || url.port || url.hash) return false;
-    if (provider === "gemini" ? url.search !== "?hl=en" : Boolean(url.search)) return false;
+    if (url.search) return false;
     if (provider === "openai") return url.hostname === "developers.openai.com" && /^\/api\/docs\/(models(?:\/[a-z0-9.-]+)?|guides\/file-inputs)\.md$/.test(url.pathname);
     if (provider === "claude") return url.hostname === "platform.claude.com" && /^\/docs\/en\/(models\/(?:overview|[a-z0-9-]+\/overview)|build-with-claude\/(?:effort|pdf-support))$/.test(url.pathname);
-    return url.hostname === "ai.google.dev" && /^\/gemini-api\/docs\/(?:models(?:\/[a-z0-9.-]+)?|pricing)$/.test(url.pathname);
+    return url.hostname === "aistudio.google.com" && /^\/docs\/(?:models(?:\/[a-z0-9.-]+)?|pricing)\.md$/.test(url.pathname);
   } catch { return false; }
 }

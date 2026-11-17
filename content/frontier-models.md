@@ -8,8 +8,11 @@ price and capability updates do not require a website deployment. See
 
 Each profile has a verification timestamp, source links and an accepted revision.
 The tracker selects the documented demanding-work pick for Claude, the introductory
-flagship recommendation for OpenAI, and the stable flagship reasoning card for
-Gemini. It does not rank model names or assume the highest number is best.
+flagship recommendation for OpenAI, and the stable card Google positions as its
+strongest reasoning model for Gemini. It picks one model per provider; a sibling
+launched beside it (GPT-6.2 Sol next to GPT-6.2 Astra) is tracked in the provider
+catalog, not as a second profile. It does not rank model names or assume the
+highest number is best.
 A provider format/meaning that the adapter cannot verify holds the previous
 profile and marks refresh failure. A six-hour gap is stale. Old accepted model
 links remain readable with an archive notice and their original verification date.

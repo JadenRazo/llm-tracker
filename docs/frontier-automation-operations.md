@@ -14,9 +14,11 @@ durable validators and matching bodies; a 304 still goes through parsing and
 validation. Each provider permits two concurrent requests, a 45-second fetch
 deadline and at most eight requests including an orphan-304 retry. Responses are
 capped at 2 MiB. There are no paid model calls or new schedules.
-Gemini documents explicitly use `?hl=en` to keep parser inputs in English.
-Redirects, other query parameters and URLs outside the official allowlist fail
-the refresh instead of expanding its network access.
+Gemini documents are the Markdown pages under `aistudio.google.com/docs/`.
+Redirects, query parameters and URLs outside the official allowlist fail the
+refresh instead of expanding its network access. A provider that moves its
+documentation therefore shows up as `Official document returned HTTP 301`, as
+Gemini did on 2026-11-02.
 
 `frontier_documents` is replaceable HTTP cache. `frontier_revisions` preserves
 accepted facts and their complete source bodies, hashes and parser version.
@@ -70,6 +72,22 @@ until the next scheduled refresh succeeds. Never pass arbitrary SQL or secrets.
 The fixed migration operation is `{"frontierMaintenance":"migrate-v1"}`;
 deployment invokes it explicitly. It is idempotent, additive and transactional.
 No page request or ordinary poller tick performs DDL.
+
+## When a provider rewords its documentation
+
+A refresh that cannot verify a page keeps the last accepted profile and records
+why. `/api/health` shows the reason under `frontier.providers[].error`:
+
+- `Unrecognized OpenAI pricing qualifier: - <start of the line>` means a note
+  under the text-token price table matches no reviewed template. On 2026-11-17
+  OpenAI reworded all four notes for GPT-6.2 Astra, so the profile stayed on
+  GPT-6 Astra until templates for the new wording were added.
+- `Official document returned HTTP 301` means the document moved.
+
+Because the deployment gate needs all three profiles current, a rewording blocks
+releases until its adapter is repaired. Capture the live documents, add them to
+`scripts/fixtures/frontier/`, add the narrowest pattern that accepts the new
+wording, and keep a test that still rejects wording nobody has reviewed.
 
 ## Validation
 

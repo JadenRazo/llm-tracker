@@ -1,16 +1,23 @@
-// Scrapes ai.google.dev/gemini-api/docs/models and upserts into `models`.
+// Reads the Gemini API model lineup and upserts into `models`.
 //
-// Unlike Anthropic's docs, this page is a server-rendered *card grid* — no
-// pivoted feature table. Each model is an anchor card:
-//   <a href="/gemini-api/docs/models/<slug>" class="gemini-card-centered">
-//     <h3 id="<slug>" data-text="Gemini 3.1 Pro">Gemini 3.1 Pro</h3>
-//     <p class="description-centered">...</p>
-//     <p class="status-subtext">Preview|Stable</p>
-//   </a>
-// The card grid carries no context-window data, but each model's DETAIL page
-// (/gemini-api/docs/models/<slug>) has a "Token limits" table with input and
-// output limits. Without it every Gemini row rendered "—" in every numeric
-// column and the page's "Largest context" stat read "—" across a 17-row table.
+// Google moved these docs from ai.google.dev (server-rendered HTML) to
+// aistudio.google.com/docs in November 2026. The old URL now answers 301 and
+// the new pages are Markdoc, served as Markdown at `<page>.md`. The lineup has
+// two card forms:
+//   {% card description="…" title="Gemini 4 Carbon" variant="model-card" %}
+//     … *Model code* **gemini-4-carbon** …
+//     {% button href="/docs/models/gemini-4-carbon" … /%}
+//   {% /card %}
+//   {% card badge="Stable" description="…" href="/docs/models/gemini-3.8-flash"
+//      title="Gemini 3.8 Flash" variant="model" /%}
+// Rows stay keyed by the docs slug in the card's link, as they always were, so
+// models already in the table are matched rather than announced again. The
+// page's "All models" endpoint tables are deliberately not read: they list
+// dozens of old and dated endpoint codes that were never cards.
+//
+// The cards carry no token limits, but each model's DETAIL page
+// (/docs/models/<slug>.md) has a "Token limits" row. Without it every Gemini
+// row rendered "—" in every numeric column.
 // We enrich from the detail page ONLY for rows whose contextWindow is still
 // null, so steady-state costs zero extra requests and a newly-listed model is
 // filled in on the run that first sees it. Pricing is still not published in
@@ -29,7 +36,6 @@
 // existence query and the update `.where(...)`). Keep that invariant if this
 // module's read/write paths change.
 
-import * as cheerio from "cheerio";
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import { tryGetDb, type Database } from "@/lib/db";
 import { events, models } from "@/lib/db/schema";
@@ -40,8 +46,9 @@ import type { SourceDescriptor } from "@/lib/sources/registry";
 
 const SOURCE_KEY = "gemini_models";
 const PROVIDER: Provider = "gemini";
-const MODELS_URL = "https://ai.google.dev/gemini-api/docs/models";
-const MODEL_DETAIL_URL = (slug: string) => `${MODELS_URL}/${slug}`;
+const DOCS_URL = "https://aistudio.google.com/docs/models";
+const MODELS_URL = `${DOCS_URL}.md`;
+const MODEL_DETAIL_URL = (slug: string) => `${DOCS_URL}/${slug}.md`;
 /** Cap on detail fetches per run so a docs restructure can't fan out unboundedly. */
 const MAX_DETAIL_FETCHES = 25;
 
@@ -68,40 +75,28 @@ function capabilityKey(label: string): string {
 }
 
 /**
- * Read token limits and capabilities off a model detail page.
+ * Read token limits and capabilities off a model detail page (Markdown).
  *
- * The values are NOT in plain table cells — each lives in a
- * `<section><p><b>Label</b></p><p>Value</p></section>` block inside a
- * `td.gemini-api-model-table-grid`, so a row/column reader sees the label cell
- * ("Token limits") next to one blob containing every value. Match on the
- * section's own <b> label instead.
+ * Limits are bold-labelled lines in the "Token limits" row. Gemini 4 models
+ * share one budget ("Context window (unified input and output token limit)" and
+ * "Max output"); earlier models list "Input token limit" / "Output token limit".
+ * Capabilities are `[**Name**](link)` followed by a supported/not-supported badge.
  */
-function parseModelDetail(html: string): ModelDetail {
-  const $ = cheerio.load(html);
+export function parseModelDetail(md: string): ModelDetail {
   const detail: ModelDetail = { contextWindow: null, maxOutput: null, capabilities: {} };
+  const limit = (label: string): number | null => {
+    const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    // The first value in a table cell follows the cell's own list bullet. Take
+    // the first number on the line: "65,536 (default synchronous) / up to …".
+    const hit = md.match(new RegExp(`^\\s*(?:\\*\\s+)?\\*\\*${escaped}\\*\\*[ \\t]+([\\d,]+)`, "m"));
+    return hit ? parseCount(hit[1]!) : null;
+  };
+  detail.contextWindow = limit("Context window (unified input and output token limit)") ?? limit("Input token limit");
+  detail.maxOutput = limit("Max output") ?? limit("Output token limit");
 
-  $("td.gemini-api-model-table-grid section").each((_, el) => {
-    const section = $(el);
-    const label = section.find("b").first().text().replace(/\s+/g, " ").trim();
-    if (!label) return;
-    // The value is the first <p> that is not the label's own paragraph.
-    const value = section
-      .find("p")
-      .filter((__, pEl) => $(pEl).find("b").length === 0)
-      .first()
-      .text()
-      .replace(/\s+/g, " ")
-      .trim();
-    if (!value) return;
-
-    const lower = label.toLowerCase();
-    if (lower === "input token limit") detail.contextWindow = parseCount(value);
-    else if (lower === "output token limit") detail.maxOutput = parseCount(value);
-    else if (/^(supported|not supported)$/i.test(value)) {
-      detail.capabilities[capabilityKey(label)] = /^supported$/i.test(value);
-    }
-  });
-
+  for (const hit of md.matchAll(/\[\*\*([^*\]]+)\*\*\]\([^)]*\)\s*\{% badge [^%]*?type="(supported|not-supported)"[^%]*?\/%\}/g)) {
+    detail.capabilities[capabilityKey(hit[1]!)] = hit[2] === "supported";
+  }
   return detail;
 }
 
@@ -123,36 +118,39 @@ interface ParsedModel {
   releaseStage: string | null;
 }
 
-function slugFromHref(href: string): string | null {
-  const m = href.match(/\/models\/([a-z0-9.\-_]+)/i);
+function slugFromHref(href: string | undefined): string | null {
+  const m = href?.match(/^\/docs\/models\/([a-z0-9.\-_]+)$/i);
   return m ? m[1]!.toLowerCase() : null;
 }
 
-function parseModelCards(html: string): ParsedModel[] {
-  const $ = cheerio.load(html);
+const cardAttributes = (raw: string): Record<string, string | undefined> =>
+  Object.fromEntries([...raw.matchAll(/([a-z-]+)="([^"]*)"/g)].map((m) => [m[1]!, m[2]!]));
+
+export function parseModelCards(md: string): ParsedModel[] {
   const seen = new Set<string>();
   const out: ParsedModel[] = [];
-
-  $('a[href*="/gemini-api/docs/models/"]').each((_, el) => {
-    const a = $(el);
-    const href = a.attr("href");
-    if (!href) return;
+  const add = (attrs: Record<string, string | undefined>, href: string | undefined) => {
     const slug = slugFromHref(href);
-    if (!slug || seen.has(slug)) return;
-
-    const h3 = a.find("h3").first();
-    const displayName = (h3.attr("data-text") || h3.text() || "").replace(/\s+/g, " ").trim();
-    if (!displayName) return;
+    const displayName = (attrs.title ?? "").replace(/\s+/g, " ").trim();
+    if (!slug || !displayName || seen.has(slug)) return;
     seen.add(slug);
+    out.push({
+      id: slug,
+      displayName,
+      description: attrs.description?.replace(/\s+/g, " ").trim() || null,
+      releaseStage: attrs.badge?.trim() || null,
+    });
+  };
 
-    const description =
-      a.find(".description-centered").first().text().replace(/\s+/g, " ").trim() || null;
-    const releaseStage =
-      a.find(".status-subtext").first().text().replace(/\s+/g, " ").trim() || null;
-
-    out.push({ id: slug, displayName, description, releaseStage });
-  });
-
+  // One pass in page order: block cards link through a button in their body,
+  // self-closing cards carry the link as an attribute.
+  const card = /\{% card ((?:[a-z-]+="[^"]*"\s*)+)(?:\/%\}|%\}([\s\S]*?)\{% \/card %\})/g;
+  for (const hit of md.matchAll(card)) {
+    const attrs = cardAttributes(hit[1]!);
+    if (attrs.variant !== "model" && attrs.variant !== "model-card") continue;
+    const link = hit[2] === undefined ? attrs.href : hit[2].match(/\{% button href="(\/docs\/models\/[^"]+)"/)?.[1];
+    add(attrs, link);
+  }
   return out;
 }
 
@@ -288,7 +286,7 @@ export async function runGeminiModels(): Promise<RunResult> {
             `Model: \`${m.id}\`${m.releaseStage ? ` (${m.releaseStage})` : ""}` +
             (m.description ? `\n\n${m.description}` : "") +
             `\n\nListed on the Gemini API models page as of ${now.toISOString().slice(0, 10)}.`,
-          url: `${MODELS_URL}#${m.id}`,
+          url: `${DOCS_URL}/${m.id}`,
           publishedAt: now,
           provider: PROVIDER,
         })),
